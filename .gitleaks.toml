@@ -1,0 +1,15 @@
+# gitleaks config for JorisJonkers-dev repos. Extends the upstream default ruleset;
+# add repo-specific allowlist entries below for known-safe test fixtures.
+title = "JorisJonkers-dev gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''(.*?)(example|sample|fixture|test)(.*?)\.(env|json|ya?ml)$''',
+]
+regexes = [
+  '''EXAMPLE_[A-Z0-9_]+''',
+]

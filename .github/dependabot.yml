@@ -1,0 +1,34 @@
+# Renovate (renovate.json) is the primary dependency manager for JorisJonkers-dev
+# repos. Dependabot is enabled only for GitHub Actions as a belt-and-braces
+# fallback; disable this file if Renovate covers actions in a given repo.
+#
+# Keep the same dependency policy shape as the richer templates under
+# templates/dependency-policy/: 7-day cooldown for third-party releases (our own
+# org is excluded), grouped minor/patch updates,
+# separate security grouping, and isolated majors.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      # Our own releases are already gated by their publishing repo's
+      # pipeline, so a cooldown only delays first-party propagation.
+      exclude:
+        - "JorisJonkers-dev/*"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    labels: ["dependencies", "github_actions"]

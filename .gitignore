@@ -1,0 +1,68 @@
+# Build output
+build/
+dist/
+out/
+target/
+.gradle/
+node_modules/
+
+# Coverage output. REPO_SETUP.md step 4 makes a >=80% coverage gate mandatory,
+# so every repo produces these.
+coverage/
+.nyc_output/
+*.lcov
+
+# Build and tool caches
+*.tsbuildinfo
+.eslintcache
+
+# Package tarballs from `npm pack` / `pnpm pack`
+*.tgz
+
+# Vendored CI actions tree: the shared reusable workflows check the github-workflows repo out
+# into .github-workflows/ beside the sources. It is CI machinery, not this project's code, so it
+# is never committed and is excluded from linting/formatting (antfu-eslint honours .gitignore).
+.github-workflows/
+
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Logs
+*.log
+
+# Local planning and agent scratch artifacts
+.specify/
+specs/[0-9][0-9][0-9]-*/
+plans/
+planning/
+scratchpad/
+scratchpads/
+.agent-council/
+**/*scratchpad*.md
+**/*.scratch.md
+**/*agent-council*.md
+.claude/commands/speckit*.md
+.claude/skills/speckit*/
+.agents/skills/speckit*/
+templates/**/.specify/
+templates/**/.claude/commands/speckit*.md
+
+# Agent worktrees. `.claude/worktrees/<name>/` is a full git worktree checked
+# out beside the sources; it is machine-local scratch, several MB, and being
+# untracked rather than ignored it left this repo permanently dirty.
+# Scoped to worktrees/ rather than all of .claude/ so tracked agent config
+# elsewhere in the estate is not silently ignored.
+.claude/worktrees/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

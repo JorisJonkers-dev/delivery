@@ -1,0 +1,7 @@
+# Required per repository. GitHub does not inherit CODEOWNERS from the org
+# defaults repository.
+#
+# Replace this team with the real owner handle or team if
+# @JorisJonkers-dev/maintainers does not exist.
+
+* @JorisJonkers-dev/maintainers
