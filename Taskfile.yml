@@ -1,0 +1,84 @@
+# One command per loop. `task` lists targets; `task check` is what CI runs.
+version: "3"
+
+vars:
+  APP: template-go
+  COVERAGE_MIN: 80
+
+tasks:
+  default:
+    cmd: task --list
+    silent: true
+
+  gen:
+    desc: Regenerate code (go generate)
+    cmd: go generate ./...
+
+  gen:check:
+    desc: Fail if generated code is stale
+    cmds:
+      - task: gen
+      - git diff --exit-code
+      - cmd: |
+          if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "generation left untracked files:" >&2
+            git ls-files --others --exclude-standard >&2
+            exit 1
+          fi
+
+  fmt:
+    desc: Fail if any file is not gofumpt/goimports formatted
+    cmd: golangci-lint fmt --diff ./...
+
+  lint:
+    desc: All linters
+    cmds:
+      - task: fmt
+      - task: lint:go
+      - task: lint:actions
+
+  lint:go:
+    desc: golangci-lint
+    cmd: golangci-lint run ./...
+
+  lint:actions:
+    desc: actionlint on every workflow
+    cmd: actionlint
+
+  test:
+    desc: Go tests with the race detector and a {{.COVERAGE_MIN}}% statement coverage gate
+    cmds:
+      - go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      - |
+        total="$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
+        echo "coverage: ${total}% (minimum {{.COVERAGE_MIN}}%)"
+        awk -v t="$total" -v m="{{.COVERAGE_MIN}}" 'BEGIN { exit !(t >= m) }'
+
+  build:
+    desc: Build the service binary
+    env:
+      CGO_ENABLED: "0"
+    cmd: go build -trimpath -o bin/{{.APP}} ./cmd/{{.APP}}
+
+  secrets:
+    desc: Scan the working tree for secrets
+    cmd: gitleaks dir --no-banner --redact .
+
+  check:
+    desc: Everything CI runs on a pull request
+    cmds:
+      - task: lint
+      - task: gen:check
+      - task: test
+      - task: build
+      - task: secrets
+
+  fix:
+    desc: Apply formatters and autofixes
+    cmds:
+      - golangci-lint fmt ./...
+      - golangci-lint run --fix ./...
+
+  run:
+    desc: Run the service locally on :8080
+    cmd: go run ./cmd/{{.APP}}

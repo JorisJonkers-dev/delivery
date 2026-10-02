@@ -1,0 +1,53 @@
+# Tag -> release flow (org standard).
+#
+# release-please maintains a release PR that accumulates conventional commits
+# and, when merged, creates a vX.Y.Z git tag + GitHub Release and bumps the
+# version manifest. Publishing of artifacts (Maven/npm to GitHub Packages,
+# images to GHCR) hangs off the published-release event below.
+#
+# This gives every repo an explicit, immutable version. Consumers pin exact
+# versions (see VERSIONING.md); nothing deploys or resolves from a moving
+# branch.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      # Author the release PR with the personal-stack-agents App token (not the
+      # default GITHUB_TOKEN) so CI runs on the PR without a manual approval
+      # gate. Best-effort: falls back to GITHUB_TOKEN when the App secrets or
+      # installation are absent.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # The GitHub Release is the artifact; add image publishing here when the service deploys.
+      - run: echo 'Released template-go at ${{ needs.release-please.outputs.tag_name }}'

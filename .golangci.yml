@@ -1,0 +1,46 @@
+# Lint gate for the service. Zero issues is required.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errname
+    - errorlint
+    - exhaustive
+    - gochecknoglobals
+    - gocognit
+    - gocritic
+    - gosec
+    - nilerr
+    - nilnil
+    - noctx
+    - revive
+    - unparam
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+    gocognit:
+      min-complexity: 15
+  exclusions:
+    rules:
+      # Sparse comments by convention: no doc comment required on every exported name.
+      - linters:
+          - revive
+        text: "^(exported|package-comments):"
+      - path: _test\.go
+        linters:
+          - gocognit
+          - gochecknoglobals
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - "github.com/JorisJonkers-dev/template-go"
