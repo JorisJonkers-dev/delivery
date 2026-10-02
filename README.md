@@ -23,8 +23,8 @@ Go, and the `delivery` project that deploys them. Generated from
 | `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger and the Release Gate |
 | `Taskfile.yml` | `schemas:sync`, `schemas:check`, `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
 
-The rest (`mise.toml`, `.golangci.yml`, `Dockerfile`, the workflows, release-please) is
-`template-go`'s, unchanged but for the names.
+The rest (`.golangci.yml`, `Dockerfile`, the workflows, release-please) is `template-go`'s,
+unchanged but for the names; `mise.toml` adds `jq` for `schemas:sync`.
 
 ## Generated types
 

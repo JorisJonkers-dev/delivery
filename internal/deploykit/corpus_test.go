@@ -2,6 +2,7 @@ package deploykit_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -21,10 +22,14 @@ import (
 // vendored mirrors deploy-kit's spec/v1, so a path a corpus case names resolves beneath it.
 const vendored = "../../third_party/deploy-kit"
 
-// required is every kind of break a generated type refuses on decode. An unknown field, a union
-// no branch of which matches and a cross-field rule only the schema refuses, so a service that
-// must refuse those validates against the schema, not the type.
-var required = []string{"missing-required", "wrong-type", "enum"}
+// breakKinds is every kind of break the corpus names. A kind this test has not heard of fails
+// it, so a renamed kind cannot quietly stop a refusal from being checked.
+var breakKinds = []string{"missing-required", "wrong-type", "enum", "unknown-field", "union", "rule"}
+
+// decodeRefuses is every kind of break a generated type refuses on decode. An unknown field, a
+// union no branch of which matches and a cross-field rule only the schema refuses, so a service
+// that must refuse those validates against the schema, not the type.
+var decodeRefuses = []string{"missing-required", "wrong-type", "enum"}
 
 func decodeAs[T any](data []byte) error {
 	var v T
@@ -37,30 +42,38 @@ func TestTypesAgreeWithTheCorpus(t *testing.T) {
 		decode   func([]byte) error
 		enforced []string
 	}{
-		{"resolved-deployment", decodeAs[resolved.ResolvedDeployment], required},
-		{"composition-lock", decodeAs[lock.CompositionLock], required},
+		{"resolved-deployment", decodeAs[resolved.ResolvedDeployment], decodeRefuses},
+		{"composition-lock", decodeAs[lock.CompositionLock], decodeRefuses},
 		// The pin annotations are a union of three shapes, which the generator merges into one
 		// struct whose every field is optional: within a union, only a field's type holds.
 		{"pin-annotations", decodeAs[pins.PinAnnotations], []string{"wrong-type"}},
-		{"cluster-state-snapshot", decodeAs[clusterstate.Snapshot], required},
+		{"cluster-state-snapshot", decodeAs[clusterstate.Snapshot], decodeRefuses},
 	}
 	for _, s := range schemas {
 		t.Run(s.name, func(t *testing.T) {
-			cases := loadCorpus(t, s.name)
-			for _, c := range cases {
+			refusalsChecked := 0
+			for _, c := range loadCorpus(t, s.name) {
 				t.Run(c.Name, func(t *testing.T) {
-					data, err := json.Marshal(c.resolved)
+					data, err := json.Marshal(c.doc)
 					if err != nil {
 						t.Fatal(err)
 					}
 					err = s.decode(data)
 					switch {
-					case c.Verdict == "accept" && err != nil:
-						t.Fatalf("an accepted document does not decode: %v", err)
-					case c.Verdict == "refuse" && slices.Contains(s.enforced, c.Breaks) && err == nil:
-						t.Fatalf("a document breaking %s decodes", c.Breaks)
+					case c.Verdict == "accept":
+						if err != nil {
+							t.Fatalf("an accepted document does not decode: %v", err)
+						}
+					case c.Verdict == "refuse" && slices.Contains(s.enforced, c.Breaks):
+						refusalsChecked++
+						if err == nil {
+							t.Fatalf("a document breaking %s decodes", c.Breaks)
+						}
 					}
 				})
+			}
+			if refusalsChecked == 0 {
+				t.Fatalf("no case refuses a break of %v, so the decode check never ran", s.enforced)
 			}
 		})
 	}
@@ -74,7 +87,6 @@ type corpusCase struct {
 	File     string      `json:"file"`
 	Instance any         `json:"instance"`
 	Patch    []patchStep `json:"patch"`
-	resolved any
 }
 
 type patchStep struct {
@@ -83,9 +95,15 @@ type patchStep struct {
 	Value any    `json:"value"`
 }
 
+// resolvedCase is a corpus case and the document it names.
+type resolvedCase struct {
+	corpusCase
+	doc any
+}
+
 // loadCorpus reads a schema's corpus and resolves every case to its document: an inline instance,
 // a spec file, or an earlier case, then the case's JSON Patch applied to it.
-func loadCorpus(t *testing.T, name string) []corpusCase {
+func loadCorpus(t *testing.T, name string) []resolvedCase {
 	t.Helper()
 	root, err := os.OpenRoot(vendored)
 	if err != nil {
@@ -106,21 +124,28 @@ func loadCorpus(t *testing.T, name string) []corpusCase {
 	if file.Schema != name+".schema.json" {
 		t.Fatalf("corpus %s names schema %q", name, file.Schema)
 	}
-	if len(file.Cases) == 0 {
-		t.Fatalf("corpus %s has no cases", name)
-	}
 	byName := map[string]corpusCase{}
 	for _, c := range file.Cases {
+		if _, dup := byName[c.Name]; dup {
+			t.Fatalf("corpus %s names two cases %q", name, c.Name)
+		}
+		switch {
+		case c.Verdict == "accept" && c.Breaks == "":
+		case c.Verdict == "refuse" && slices.Contains(breakKinds, c.Breaks):
+		default:
+			t.Fatalf("case %q: verdict %q breaking %q is not one this test knows", c.Name, c.Verdict, c.Breaks)
+		}
 		byName[c.Name] = c
 	}
-	for i := range file.Cases {
-		doc, err := resolveCase(root, byName, file.Cases[i], 0)
+	cases := make([]resolvedCase, 0, len(file.Cases))
+	for _, c := range file.Cases {
+		doc, err := resolveCase(root, byName, c, 0)
 		if err != nil {
-			t.Fatalf("case %q: %v", file.Cases[i].Name, err)
+			t.Fatalf("case %q: %v", c.Name, err)
 		}
-		file.Cases[i].resolved = doc
+		cases = append(cases, resolvedCase{c, doc})
 	}
-	return file.Cases
+	return cases
 }
 
 func resolveCase(root *os.Root, byName map[string]corpusCase, c corpusCase, depth int) (any, error) {
@@ -160,7 +185,7 @@ func resolveCase(root *os.Root, byName map[string]corpusCase, c corpusCase, dept
 	}
 	for _, step := range c.Patch {
 		if doc, err = apply(doc, step); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s %s: %w", step.Op, step.Path, err)
 		}
 	}
 	return doc, nil
@@ -169,119 +194,83 @@ func resolveCase(root *os.Root, byName map[string]corpusCase, c corpusCase, dept
 // apply is the add, remove and replace operations of RFC 6902, which is every operation the
 // corpus uses.
 func apply(doc any, step patchStep) (any, error) {
-	tokens, err := pointer(step.Path)
-	if err != nil {
-		return nil, err
+	if !slices.Contains([]string{"add", "remove", "replace"}, step.Op) {
+		return nil, errors.New("unsupported operation")
 	}
-	if len(tokens) == 0 {
+	if step.Path == "" {
 		if step.Op == "remove" {
-			return nil, fmt.Errorf("cannot remove the whole document")
+			return nil, errors.New("cannot remove the whole document")
 		}
 		return step.Value, nil
 	}
-	parent, err := walk(doc, tokens[:len(tokens)-1])
-	if err != nil {
-		return nil, err
+	if !strings.HasPrefix(step.Path, "/") {
+		return nil, errors.New("a pointer starts with /")
 	}
-	last := tokens[len(tokens)-1]
-	switch p := parent.(type) {
-	case map[string]any:
-		if _, ok := p[last]; !ok && step.Op != "add" {
-			return nil, fmt.Errorf("%s %s: no such member", step.Op, step.Path)
-		}
-		if step.Op == "remove" {
-			delete(p, last)
-		} else {
-			p[last] = step.Value
-		}
-		return doc, nil
-	case []any:
-		return doc, applyToArray(doc, tokens[:len(tokens)-1], p, last, step)
-	default:
-		return nil, fmt.Errorf("%s %s: parent is neither object nor array", step.Op, step.Path)
-	}
-}
-
-func applyToArray(doc any, parentPath []string, arr []any, last string, step patchStep) error {
-	i := len(arr)
-	if last != "-" {
-		n, err := strconv.Atoi(last)
-		if err != nil || n < 0 || n > len(arr) || (n == len(arr) && step.Op != "add") {
-			return fmt.Errorf("%s %s: index out of range", step.Op, step.Path)
-		}
-		i = n
-	}
-	switch step.Op {
-	case "add":
-		arr = slices.Insert(arr, i, step.Value)
-	case "remove":
-		arr = slices.Delete(arr, i, i+1)
-	case "replace":
-		arr[i] = step.Value
-		return nil
-	default:
-		return fmt.Errorf("unsupported op %q", step.Op)
-	}
-	return set(doc, parentPath, arr)
-}
-
-// set replaces the value at tokens, which is how a resized array reaches its parent.
-func set(doc any, tokens []string, value any) error {
-	if len(tokens) == 0 {
-		return fmt.Errorf("cannot resize the root array")
-	}
-	parent, err := walk(doc, tokens[:len(tokens)-1])
-	if err != nil {
-		return err
-	}
-	last := tokens[len(tokens)-1]
-	switch p := parent.(type) {
-	case map[string]any:
-		p[last] = value
-	case []any:
-		n, err := strconv.Atoi(last)
-		if err != nil || n < 0 || n >= len(p) {
-			return fmt.Errorf("index %q out of range", last)
-		}
-		p[n] = value
-	default:
-		return fmt.Errorf("parent is neither object nor array")
-	}
-	return nil
-}
-
-func walk(doc any, tokens []string) (any, error) {
-	for _, tok := range tokens {
-		switch d := doc.(type) {
-		case map[string]any:
-			next, ok := d[tok]
-			if !ok {
-				return nil, fmt.Errorf("no member %q", tok)
-			}
-			doc = next
-		case []any:
-			n, err := strconv.Atoi(tok)
-			if err != nil || n < 0 || n >= len(d) {
-				return nil, fmt.Errorf("index %q out of range", tok)
-			}
-			doc = d[n]
-		default:
-			return nil, fmt.Errorf("cannot descend into %T at %q", doc, tok)
-		}
-	}
-	return doc, nil
-}
-
-func pointer(path string) ([]string, error) {
-	if path == "" {
-		return nil, nil
-	}
-	if !strings.HasPrefix(path, "/") {
-		return nil, fmt.Errorf("pointer %q does not start with /", path)
-	}
-	tokens := strings.Split(path[1:], "/")
+	tokens := strings.Split(step.Path[1:], "/")
 	for i, tok := range tokens {
 		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
 	}
-	return tokens, nil
+	return applyAt(doc, tokens, step)
+}
+
+// applyAt applies step at tokens beneath node and returns the node, which an array insertion or
+// deletion replaces.
+func applyAt(node any, tokens []string, step patchStep) (any, error) {
+	tok, last := tokens[0], len(tokens) == 1
+	switch n := node.(type) {
+	case map[string]any:
+		child, ok := n[tok]
+		if !ok && (!last || step.Op != "add") {
+			return nil, fmt.Errorf("no member %q", tok)
+		}
+		if !last {
+			updated, err := applyAt(child, tokens[1:], step)
+			n[tok] = updated
+			return n, err
+		}
+		if step.Op == "remove" {
+			delete(n, tok)
+		} else {
+			n[tok] = step.Value
+		}
+		return n, nil
+	case []any:
+		i, err := index(tok, len(n), last && step.Op == "add")
+		if err != nil {
+			return nil, err
+		}
+		if !last {
+			updated, err := applyAt(n[i], tokens[1:], step)
+			n[i] = updated
+			return n, err
+		}
+		switch step.Op {
+		case "add":
+			return slices.Insert(n, i, step.Value), nil
+		case "remove":
+			return slices.Delete(n, i, i+1), nil
+		default:
+			n[i] = step.Value
+			return n, nil
+		}
+	default:
+		return nil, fmt.Errorf("cannot descend into %T at %q", node, tok)
+	}
+}
+
+// index reads an array token. "-" and the length name the end of the array, which only an add
+// may address.
+func index(tok string, length int, adding bool) (int, error) {
+	i := length
+	if tok != "-" {
+		n, err := strconv.Atoi(tok)
+		if err != nil {
+			return 0, fmt.Errorf("index %q is not a number", tok)
+		}
+		i = n
+	}
+	if i < 0 || i > length || (i == length && !adding) {
+		return 0, fmt.Errorf("index %q out of range", tok)
+	}
+	return i, nil
 }

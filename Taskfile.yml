@@ -37,7 +37,6 @@ tasks:
   schemas:check:
     desc: Fail if the vendored schemas differ from deploy-kit at DEPLOY_KIT_REF
     cmds:
-      - rm -rf .schemas-check
       - defer: rm -rf .schemas-check
       - scripts/sync-schemas.sh {{.DEPLOY_KIT_REF}} .schemas-check {{.SCHEMAS}}
       - diff -r .schemas-check {{.VENDOR}}

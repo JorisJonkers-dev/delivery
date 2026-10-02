@@ -1,15 +1,16 @@
 # deploy-kit Project Intent for the delivery machinery: the Applications that perform a switch and
 # are never switched by one. The Platform document names both in `delivery.machinery` and the
 # Release Gate in `delivery.gate`, so this file is the one project the platform owns outright
-# (deploy-kit spec/v1/14-platform-intent.md#delivery-policy; its examples/delivery is this file's
-# model).
+# (deploy-kit spec/v1/14-platform-intent.md#delivery-policy). Its examples/delivery is this file's
+# model, but for the Release Gate, which here is the Go binary this repository builds.
 #
 # Both answer `continuous`: they keep serving while they cut over. A gate cannot gate its own
 # release and nothing gates Flagger's, so each derives a rolling switchover
-# (spec/v1/55-delivery.md#the-release-gate).
+# (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 #
-# The ClusterState Collector and the Vault policy job are scheduled work, which Project Intent
-# cannot declare yet; they join this file with the model that can.
+# The other two services this repository builds are not declared here. The ClusterState Collector
+# is a CronJob, which Project Intent has no schedule to declare yet; the Vault policy job runs in
+# the platform's apps-vso-secrets Reconcile Unit, not in this project.
 
 apiVersion: intent.jorisjonkers.dev/v1
 kind: Project
