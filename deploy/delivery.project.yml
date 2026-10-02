@@ -1,0 +1,56 @@
+# deploy-kit Project Intent for the delivery machinery: the Applications that perform a switch and
+# are never switched by one. The Platform document names both in `delivery.machinery` and the
+# Release Gate in `delivery.gate`, so this file is the one project the platform owns outright
+# (deploy-kit spec/v1/14-platform-intent.md#delivery-policy). Its examples/delivery is this file's
+# model, but for the Release Gate, which here is the Go binary this repository builds.
+#
+# Both answer `continuous`: they keep serving while they cut over. A gate cannot gate its own
+# release and nothing gates Flagger's, so each derives a rolling switchover
+# (deploy-kit spec/v1/55-delivery.md#the-release-gate).
+#
+# The other two services this repository builds are not declared here. The ClusterState Collector
+# is a CronJob, which Project Intent has no schedule to declare yet; the Vault policy job runs in
+# the platform's apps-vso-secrets Reconcile Unit, not in this project.
+
+apiVersion: intent.jorisjonkers.dev/v1
+kind: Project
+schemaVersion: 1.0.0
+
+project: delivery # the namespace derives: delivery-system
+owner: joris
+
+applications:
+  - id: flagger
+    processes:
+      - name: flagger
+        lifecycle: application
+        image: flagger # a third-party image; the lock resolves digest, uid and gid
+        runtime: none
+        provides:
+          http: 8080
+        placement:
+          memory: 64Mi
+          cpu: 10m
+        writablePaths: [/tmp]
+        probes:
+          readiness: { path: /healthz, port: 8080 }
+          liveness: { path: /healthz, port: 8080 }
+        startupBudget: 30s
+        cutover: continuous
+
+  - id: release-gate
+    processes:
+      - name: release-gate
+        lifecycle: application
+        image: release-gate # built from this repository's Dockerfile
+        runtime: none # a static Go binary needs no Runtime Profile
+        provides:
+          http: 8080 # Flagger's webhooks; matches the default ADDR
+        placement:
+          memory: 64Mi
+          cpu: 25m
+        probes:
+          readiness: { path: /readyz, port: 8080 }
+          liveness: { path: /healthz, port: 8080 }
+        startupBudget: 10s
+        cutover: continuous

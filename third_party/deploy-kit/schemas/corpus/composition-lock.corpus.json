@@ -1,0 +1,120 @@
+{
+  "schema": "composition-lock.schema.json",
+  "cases": [
+    {
+      "name": "a lock with a released fragment and an isolated Project",
+      "verdict": "accept",
+      "instance": {
+        "apiVersion": "resolved.jorisjonkers.dev/v1",
+        "kind": "CompositionLock",
+        "metadata": {
+          "cluster": "production",
+          "generatedAt": "2026-10-01T12:00:00Z"
+        },
+        "spec": {
+          "schemaVersion": "1.0.0",
+          "toolkitVersion": "0.22.0",
+          "composedDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previousLockDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "lockChain": [
+            {
+              "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "timestamp": "2026-10-01T12:00:00Z"
+            }
+          ],
+          "fragments": {
+            "intent-knowledge": {
+              "ref": "ghcr.io/jorisjonkers-dev/intent-knowledge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "project": "knowledge",
+              "repository": "JorisJonkers-dev/knowledge",
+              "schemaVersion": "1.0.0",
+              "version": "2.1.2",
+              "revisions": {
+                "knowledge": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "knowledge-ingest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "sourceSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "inputsSha": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          },
+          "isolated": {
+            "data": {
+              "refused": "ghcr.io/jorisjonkers-dev/intent-knowledge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "codes": [
+                "E_CUTOVER_UNHONOURABLE"
+              ]
+            }
+          },
+          "clusterStateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "name": "a first lock, with no previous lock and nothing isolated",
+      "verdict": "accept",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/spec/previousLockDigest"
+        },
+        {
+          "op": "remove",
+          "path": "/spec/isolated"
+        }
+      ]
+    },
+    {
+      "name": "a field the model does not have",
+      "verdict": "refuse",
+      "breaks": "unknown-field",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/spec/colour",
+          "value": "blue"
+        }
+      ]
+    },
+    {
+      "name": "a fragment with no version",
+      "verdict": "refuse",
+      "breaks": "missing-required",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/spec/fragments/intent-knowledge/version"
+        }
+      ]
+    },
+    {
+      "name": "a lock chain written as one string",
+      "verdict": "refuse",
+      "breaks": "wrong-type",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/spec/lockChain",
+          "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "name": "a document of another kind",
+      "verdict": "refuse",
+      "breaks": "enum",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/kind",
+          "value": "Lock"
+        }
+      ]
+    }
+  ]
+}

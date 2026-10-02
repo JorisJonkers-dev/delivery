@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/PinAnnotations",
+  "$defs": {
+    "PinAnnotations": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "estate.jorisjonkers.dev/paused-by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "estate.jorisjonkers.dev/paused-at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "estate.jorisjonkers.dev/paused-reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "estate.jorisjonkers.dev/paused-by",
+            "estate.jorisjonkers.dev/paused-at",
+            "estate.jorisjonkers.dev/paused-reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "estate.jorisjonkers.dev/paused-by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "estate.jorisjonkers.dev/paused-at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "estate.jorisjonkers.dev/paused-reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "estate.jorisjonkers.dev/rollback-version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "estate.jorisjonkers.dev/rollback-fragment": {
+              "type": "string",
+              "pattern": "^(?:[^@\\s/]+\\/)+[^@\\s/:]+@sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "estate.jorisjonkers.dev/paused-by",
+            "estate.jorisjonkers.dev/paused-at",
+            "estate.jorisjonkers.dev/paused-reason",
+            "estate.jorisjonkers.dev/rollback-version",
+            "estate.jorisjonkers.dev/rollback-fragment"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

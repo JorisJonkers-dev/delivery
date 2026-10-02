@@ -1,0 +1,37 @@
+# One pipeline ending in "Pipeline Complete", the only required check (estate convention).
+# ONE job: GitHub bills each job rounded up to a full minute, so checks are steps, not jobs.
+# `task check` is everything CI runs, so local and CI cannot drift. The image build is the one
+# step that is not a task: it needs the Docker daemon the runner has.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline-complete:
+    name: Pipeline Complete
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+        with:
+          cache: true
+
+      - name: Check
+        run: mise exec -- task check
+
+      - name: Container image builds
+        if: ${{ !cancelled() }}
+        run: docker build --build-arg VERSION=ci -t release-gate:ci .

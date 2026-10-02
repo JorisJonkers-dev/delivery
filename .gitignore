@@ -66,3 +66,9 @@ templates/**/.claude/commands/speckit*.md
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Local build output
+bin/
+coverage.out
+coverage.handwritten.out
+.schemas-check/

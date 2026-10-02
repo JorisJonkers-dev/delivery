@@ -1,0 +1,61 @@
+{
+  "schema": "cluster-state-snapshot.schema.json",
+  "cases": [
+    {
+      "name": "the worked estate's empty snapshot",
+      "verdict": "accept",
+      "file": "examples/platform/cluster-state.yml"
+    },
+    {
+      "name": "a field the model does not have",
+      "verdict": "refuse",
+      "breaks": "unknown-field",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/colour",
+          "value": "blue"
+        }
+      ]
+    },
+    {
+      "name": "a snapshot of no cluster",
+      "verdict": "refuse",
+      "breaks": "missing-required",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/cluster"
+        }
+      ]
+    },
+    {
+      "name": "bindings written as a word",
+      "verdict": "refuse",
+      "breaks": "wrong-type",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/bindings",
+          "value": "none"
+        }
+      ]
+    },
+    {
+      "name": "a document of another kind",
+      "verdict": "refuse",
+      "breaks": "enum",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/kind",
+          "value": "Cluster"
+        }
+      ]
+    }
+  ]
+}
