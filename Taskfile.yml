@@ -2,8 +2,12 @@
 version: "3"
 
 vars:
-  APP: template-go
+  APP: release-gate
   COVERAGE_MIN: 80
+  # The deploy-kit commit the vendored schemas come from. Move it, then `task schemas:sync gen`.
+  DEPLOY_KIT_REF: b9ac258f5ebe52a94e182ebeb23c7ea94af7aa98
+  SCHEMAS: resolved-deployment composition-lock pin-annotations cluster-state-snapshot
+  VENDOR: third_party/deploy-kit
 
 tasks:
   default:
@@ -26,6 +30,18 @@ tasks:
             exit 1
           fi
 
+  schemas:sync:
+    desc: Vendor deploy-kit's schemas, their corpus and the files it reads, at DEPLOY_KIT_REF
+    cmd: scripts/sync-schemas.sh {{.DEPLOY_KIT_REF}} {{.VENDOR}} {{.SCHEMAS}}
+
+  schemas:check:
+    desc: Fail if the vendored schemas differ from deploy-kit at DEPLOY_KIT_REF
+    cmds:
+      - rm -rf .schemas-check
+      - defer: rm -rf .schemas-check
+      - scripts/sync-schemas.sh {{.DEPLOY_KIT_REF}} .schemas-check {{.SCHEMAS}}
+      - diff -r .schemas-check {{.VENDOR}}
+
   fmt:
     desc: Fail if any file is not gofumpt/goimports formatted
     cmd: golangci-lint fmt --diff ./...
@@ -46,11 +62,13 @@ tasks:
     cmd: actionlint
 
   test:
-    desc: Go tests with the race detector and a {{.COVERAGE_MIN}}% statement coverage gate
+    desc: Go tests with the race detector and a {{.COVERAGE_MIN}}% statement coverage gate on hand-written code
     cmds:
       - go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      # Generated code is held by the corpus test and gen:check, not by statement coverage.
+      - grep -v '_gen\.go:' coverage.out > coverage.handwritten.out
       - |
-        total="$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
+        total="$(go tool cover -func=coverage.handwritten.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
         echo "coverage: ${total}% (minimum {{.COVERAGE_MIN}}%)"
         awk -v t="$total" -v m="{{.COVERAGE_MIN}}" 'BEGIN { exit !(t >= m) }'
 
@@ -68,6 +86,7 @@ tasks:
     desc: Everything CI runs on a pull request
     cmds:
       - task: lint
+      - task: schemas:check
       - task: gen:check
       - task: test
       - task: build

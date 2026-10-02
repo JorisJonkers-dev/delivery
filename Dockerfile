@@ -12,10 +12,10 @@ ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/template-go ./cmd/template-go
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/release-gate ./cmd/release-gate
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/template-go /template-go
+COPY --from=build /out/release-gate /release-gate
 EXPOSE 8080
 USER nonroot:nonroot
-ENTRYPOINT ["/template-go"]
+ENTRYPOINT ["/release-gate"]

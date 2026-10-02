@@ -1,0 +1,55 @@
+# deploy-kit Project Intent for the delivery machinery: the Applications that perform a switch and
+# are never switched by one. The Platform document names both in `delivery.machinery` and the
+# Release Gate in `delivery.gate`, so this file is the one project the platform owns outright
+# (deploy-kit spec/v1/14-platform-intent.md#delivery-policy; its examples/delivery is this file's
+# model).
+#
+# Both answer `continuous`: they keep serving while they cut over. A gate cannot gate its own
+# release and nothing gates Flagger's, so each derives a rolling switchover
+# (spec/v1/55-delivery.md#the-release-gate).
+#
+# The ClusterState Collector and the Vault policy job are scheduled work, which Project Intent
+# cannot declare yet; they join this file with the model that can.
+
+apiVersion: intent.jorisjonkers.dev/v1
+kind: Project
+schemaVersion: 1.0.0
+
+project: delivery # the namespace derives: delivery-system
+owner: joris
+
+applications:
+  - id: flagger
+    processes:
+      - name: flagger
+        lifecycle: application
+        image: flagger # a third-party image; the lock resolves digest, uid and gid
+        runtime: none
+        provides:
+          http: 8080
+        placement:
+          memory: 64Mi
+          cpu: 10m
+        writablePaths: [/tmp]
+        probes:
+          readiness: { path: /healthz, port: 8080 }
+          liveness: { path: /healthz, port: 8080 }
+        startupBudget: 30s
+        cutover: continuous
+
+  - id: release-gate
+    processes:
+      - name: release-gate
+        lifecycle: application
+        image: release-gate # built from this repository's Dockerfile
+        runtime: none # a static Go binary needs no Runtime Profile
+        provides:
+          http: 8080 # Flagger's webhooks; matches the default ADDR
+        placement:
+          memory: 64Mi
+          cpu: 25m
+        probes:
+          readiness: { path: /readyz, port: 8080 }
+          liveness: { path: /healthz, port: 8080 }
+        startupBudget: 10s
+        cutover: continuous

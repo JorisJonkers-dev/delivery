@@ -1,0 +1,522 @@
+{
+  "schema": "resolved-deployment.schema.json",
+  "cases": [
+    {
+      "name": "minimal's estate as one Resolved Deployment",
+      "verdict": "accept",
+      "instance": {
+        "apiVersion": "resolved.jorisjonkers.dev/v1",
+        "kind": "ResolvedDeployment",
+        "provenance": {
+          "inputDigests": [
+            {
+              "digest": "sha256:fd1533869c76102fa6bb052e9f61c25b86f6f2caba2610ba084a6748bc68fcbe",
+              "input": "intent-fragment",
+              "name": "delivery"
+            },
+            {
+              "digest": "sha256:9a29fae42c0c6cd4f9824d7af3d9ecc68c068a3a00d1f9488bfbb70c882ea565",
+              "input": "intent-fragment",
+              "name": "edge"
+            },
+            {
+              "digest": "sha256:f2f222833d6ab23c339933207ba4d4e5b5d238983a929f331d542ab215a5a7ae",
+              "input": "intent-fragment",
+              "name": "notes"
+            },
+            {
+              "digest": "sha256:84b3b1a8e81fc41b549a34715713cae3354cfc475e9add64d322b7c631f5b816",
+              "input": "intent-fragment",
+              "name": "observability"
+            },
+            {
+              "digest": "sha256:31309996835674cc4f037f8e19897ddbe4a7fa8a487a3efc613e251caeed0853",
+              "input": "intent-fragment",
+              "name": "secrets"
+            },
+            {
+              "digest": "sha256:6859a78469fb05135dca9de5ac8b339666325fe4c12e74dd7a3d5a99ea76af97",
+              "input": "platform-intent",
+              "name": "jorisjonkers.dev"
+            },
+            {
+              "digest": "sha256:a989e80337efb294fa1a7175b3ad3eea8bed9bf13fbd503a26691c9265575fc2",
+              "input": "node-contract",
+              "name": "production"
+            },
+            {
+              "digest": "sha256:a37bfb70273197153bde4ab238562030f630c1f72accfabb1d3acd7d733ab6c2",
+              "input": "images-lock",
+              "name": "estate"
+            },
+            {
+              "digest": "sha256:202e5e2a22ab20cfe5b6e85cbd8139cb13ed3b199b2f1af4380068d21d54ff1f",
+              "input": "cluster-state",
+              "name": "production"
+            }
+          ],
+          "renderHash": "sha256:b04c05357fb8b157bacf52538c45076fcede252472ba53708efaa6ca04b97993",
+          "schemaPackageIntegrity": "sha256:5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b"
+        },
+        "pathPlan": [
+          {
+            "path": "apps/notes",
+            "adapter": "kubernetes",
+            "scope": "application"
+          }
+        ],
+        "reconcileUnits": [
+          {
+            "name": "apps-notes"
+          }
+        ],
+        "applications": [
+          {
+            "alertClass": "business-hours",
+            "exposure": [
+              {
+                "certificates": "acme",
+                "host": "notes.jorisjonkers.dev",
+                "listener": "tls",
+                "name": "public",
+                "proxy": {
+                  "application": "traefik-public",
+                  "namespace": "edge-system"
+                },
+                "routes": [
+                  {
+                    "audience": "anonymous",
+                    "match": "prefix",
+                    "middleware": [
+                      {
+                        "contentPolicy": "strict",
+                        "kind": "security-headers"
+                      }
+                    ],
+                    "path": "/",
+                    "precedence": 1,
+                    "process": "notes-api",
+                    "surface": "http"
+                  }
+                ],
+                "tier": "public-frankfurt"
+              }
+            ],
+            "id": "notes",
+            "namespace": "notes-system",
+            "processes": [
+              {
+                "cpu": "50m",
+                "cutover": "continuous",
+                "deadline": "60s",
+                "egress": [
+                  {
+                    "namespace": "kube-system",
+                    "port": 53,
+                    "rule": "cluster-dns"
+                  }
+                ],
+                "environment": [
+                  {
+                    "name": "DEPLOYMENT_ENVIRONMENT",
+                    "value": "production"
+                  },
+                  {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                  },
+                  {
+                    "name": "NOTES_PAGE_SIZE",
+                    "value": "50"
+                  },
+                  {
+                    "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "value": "http://otel-collector.observability-system.svc.cluster.local:4317"
+                  },
+                  {
+                    "name": "OTEL_SERVICE_NAME",
+                    "value": "notes-api"
+                  },
+                  {
+                    "name": "PORT",
+                    "value": "8080"
+                  }
+                ],
+                "gid": 1000,
+                "hardening": "restricted",
+                "identity": "notes-api",
+                "identityToken": false,
+                "image": "ghcr.io/jorisjonkers-dev/notes/notes-api@sha256:9c1e5a4b7d2f8e3a6b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a",
+                "ingress": [
+                  {
+                    "namespace": "edge-system",
+                    "port": 8080,
+                    "process": "traefik-public",
+                    "rule": "tier-proxy"
+                  },
+                  {
+                    "namespace": "observability-system",
+                    "port": 8080,
+                    "process": "prometheus",
+                    "rule": "metrics-stack"
+                  }
+                ],
+                "lifecycle": "application",
+                "liveness": {
+                  "failures": 3,
+                  "path": "/healthz/live",
+                  "period": "10s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "memory": "256Mi",
+                "name": "notes-api",
+                "placement": {
+                  "eligibleNodes": [
+                    "enschede-t1000-1",
+                    "enschede-rx7900xtx-1",
+                    "enschede-gtx-960m-1",
+                    "enschede-pi-1",
+                    "enschede-pi-2",
+                    "enschede-pi-3",
+                    "frankfurt-contabo-1"
+                  ]
+                },
+                "readiness": {
+                  "failures": 3,
+                  "path": "/healthz/ready",
+                  "period": "10s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "replicas": 1,
+                "runtime": "node",
+                "startup": {
+                  "failures": 4,
+                  "path": "/healthz/live",
+                  "period": "5s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "surfaces": [
+                  {
+                    "name": "http",
+                    "port": 8080
+                  }
+                ],
+                "switchover": "blue-green",
+                "uid": 1000
+              }
+            ],
+            "project": "notes",
+            "reconcileUnit": "apps-notes",
+            "releaseGate": {
+              "analysis": {
+                "interval": "30s",
+                "iterations": 4,
+                "threshold": 3
+              },
+              "deadline": "60s",
+              "endpoint": "http://release-gate.delivery-system.svc.cluster.local:8080",
+              "members": [
+                {
+                  "checks": [
+                    "error-rate",
+                    "latency"
+                  ],
+                  "process": "notes-api",
+                  "readiness": {
+                    "path": "/healthz/ready",
+                    "port": 8080
+                  }
+                }
+              ]
+            },
+            "revision": "sha256:493fb16ace2e5e7bebf96ea8490f20c2f1dd82fbbf8ce4a9d6b67963b0bcb048",
+            "scrape": {
+              "interval": "30s",
+              "path": "/metrics",
+              "process": "notes-api",
+              "surface": "http",
+              "timeout": "10s"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "a field the model does not have",
+      "verdict": "refuse",
+      "breaks": "unknown-field",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/colour",
+          "value": "blue"
+        }
+      ]
+    },
+    {
+      "name": "a deployment with no path plan",
+      "verdict": "refuse",
+      "breaks": "missing-required",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/pathPlan"
+        }
+      ]
+    },
+    {
+      "name": "applications written as one object",
+      "verdict": "refuse",
+      "breaks": "wrong-type",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/applications",
+          "value": {
+            "alertClass": "business-hours",
+            "exposure": [
+              {
+                "certificates": "acme",
+                "host": "notes.jorisjonkers.dev",
+                "listener": "tls",
+                "name": "public",
+                "proxy": {
+                  "application": "traefik-public",
+                  "namespace": "edge-system"
+                },
+                "routes": [
+                  {
+                    "audience": "anonymous",
+                    "match": "prefix",
+                    "middleware": [
+                      {
+                        "contentPolicy": "strict",
+                        "kind": "security-headers"
+                      }
+                    ],
+                    "path": "/",
+                    "precedence": 1,
+                    "process": "notes-api",
+                    "surface": "http"
+                  }
+                ],
+                "tier": "public-frankfurt"
+              }
+            ],
+            "id": "notes",
+            "namespace": "notes-system",
+            "processes": [
+              {
+                "cpu": "50m",
+                "cutover": "continuous",
+                "deadline": "60s",
+                "egress": [
+                  {
+                    "namespace": "kube-system",
+                    "port": 53,
+                    "rule": "cluster-dns"
+                  }
+                ],
+                "environment": [
+                  {
+                    "name": "DEPLOYMENT_ENVIRONMENT",
+                    "value": "production"
+                  },
+                  {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                  },
+                  {
+                    "name": "NOTES_PAGE_SIZE",
+                    "value": "50"
+                  },
+                  {
+                    "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "value": "http://otel-collector.observability-system.svc.cluster.local:4317"
+                  },
+                  {
+                    "name": "OTEL_SERVICE_NAME",
+                    "value": "notes-api"
+                  },
+                  {
+                    "name": "PORT",
+                    "value": "8080"
+                  }
+                ],
+                "gid": 1000,
+                "hardening": "restricted",
+                "identity": "notes-api",
+                "identityToken": false,
+                "image": "ghcr.io/jorisjonkers-dev/notes/notes-api@sha256:9c1e5a4b7d2f8e3a6b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a",
+                "ingress": [
+                  {
+                    "namespace": "edge-system",
+                    "port": 8080,
+                    "process": "traefik-public",
+                    "rule": "tier-proxy"
+                  },
+                  {
+                    "namespace": "observability-system",
+                    "port": 8080,
+                    "process": "prometheus",
+                    "rule": "metrics-stack"
+                  }
+                ],
+                "lifecycle": "application",
+                "liveness": {
+                  "failures": 3,
+                  "path": "/healthz/live",
+                  "period": "10s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "memory": "256Mi",
+                "name": "notes-api",
+                "placement": {
+                  "eligibleNodes": [
+                    "enschede-t1000-1",
+                    "enschede-rx7900xtx-1",
+                    "enschede-gtx-960m-1",
+                    "enschede-pi-1",
+                    "enschede-pi-2",
+                    "enschede-pi-3",
+                    "frankfurt-contabo-1"
+                  ]
+                },
+                "readiness": {
+                  "failures": 3,
+                  "path": "/healthz/ready",
+                  "period": "10s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "replicas": 1,
+                "runtime": "node",
+                "startup": {
+                  "failures": 4,
+                  "path": "/healthz/live",
+                  "period": "5s",
+                  "port": 8080,
+                  "timeout": "5s"
+                },
+                "surfaces": [
+                  {
+                    "name": "http",
+                    "port": 8080
+                  }
+                ],
+                "switchover": "blue-green",
+                "uid": 1000
+              }
+            ],
+            "project": "notes",
+            "reconcileUnit": "apps-notes",
+            "releaseGate": {
+              "analysis": {
+                "interval": "30s",
+                "iterations": 4,
+                "threshold": 3
+              },
+              "deadline": "60s",
+              "endpoint": "http://release-gate.delivery-system.svc.cluster.local:8080",
+              "members": [
+                {
+                  "checks": [
+                    "error-rate",
+                    "latency"
+                  ],
+                  "process": "notes-api",
+                  "readiness": {
+                    "path": "/healthz/ready",
+                    "port": 8080
+                  }
+                }
+              ]
+            },
+            "revision": "sha256:493fb16ace2e5e7bebf96ea8490f20c2f1dd82fbbf8ce4a9d6b67963b0bcb048",
+            "scrape": {
+              "interval": "30s",
+              "path": "/metrics",
+              "process": "notes-api",
+              "surface": "http",
+              "timeout": "10s"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a path assigned to no adapter the registry knows",
+      "verdict": "refuse",
+      "breaks": "enum",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/pathPlan/0/adapter",
+          "value": "helm"
+        }
+      ]
+    },
+    {
+      "name": "a projection's kind on the estate-wide document",
+      "verdict": "refuse",
+      "breaks": "enum",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/kind",
+          "value": "ResolvedApplication"
+        }
+      ]
+    },
+    {
+      "name": "a secret grant that is neither a path grant nor an engine grant",
+      "verdict": "refuse",
+      "breaks": "union",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/applications/0/processes/0/secrets",
+          "value": [
+            {
+              "path": "secret/data/x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a blue-green switchover with no release gate",
+      "verdict": "refuse",
+      "breaks": "rule",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/applications/0/releaseGate"
+        }
+      ]
+    },
+    {
+      "name": "a switchover on a Process with no cutover",
+      "verdict": "refuse",
+      "breaks": "rule",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/applications/0/processes/0/cutover"
+        }
+      ]
+    }
+  ]
+}

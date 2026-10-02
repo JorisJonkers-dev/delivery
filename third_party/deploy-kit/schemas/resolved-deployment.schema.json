@@ -1,0 +1,1525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/ResolvedDeployment",
+  "$defs": {
+    "ResolvedDeployment": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "resolved.jorisjonkers.dev/v1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ResolvedDeployment"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "pathPlan": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PathAssignment"
+          }
+        },
+        "reconcileUnits": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReconcileUnit"
+          }
+        },
+        "applications": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedApplication"
+          }
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "provenance",
+        "pathPlan",
+        "reconcileUnits",
+        "applications"
+      ],
+      "additionalProperties": false
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "renderHash": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        },
+        "schemaPackageIntegrity": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        },
+        "inputDigests": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputDigest"
+          }
+        }
+      },
+      "required": [
+        "renderHash",
+        "schemaPackageIntegrity",
+        "inputDigests"
+      ],
+      "additionalProperties": false
+    },
+    "InputDigest": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/PinnedInput"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        }
+      },
+      "required": [
+        "input",
+        "name",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "PinnedInput": {
+      "type": "string",
+      "enum": [
+        "intent-fragment",
+        "platform-intent",
+        "node-contract",
+        "images-lock",
+        "cluster-state"
+      ]
+    },
+    "PathAssignment": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "$ref": "#/$defs/AdapterName"
+        },
+        "scope": {
+          "$ref": "#/$defs/PathScope"
+        }
+      },
+      "required": [
+        "path",
+        "adapter",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "AdapterName": {
+      "type": "string",
+      "enum": [
+        "kubernetes",
+        "networking",
+        "prometheus",
+        "traefik",
+        "vault-policy",
+        "vso"
+      ]
+    },
+    "PathScope": {
+      "type": "string",
+      "enum": [
+        "estate",
+        "project",
+        "application"
+      ]
+    },
+    "ReconcileUnit": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "after": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedApplication": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reconcileUnit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reconcileAfter": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "alertClass": {
+          "$ref": "#/$defs/AlertClass"
+        },
+        "scrape": {
+          "$ref": "#/$defs/ResolvedScrape"
+        },
+        "releaseGate": {
+          "$ref": "#/$defs/ReleaseGate"
+        },
+        "secretStore": {
+          "type": "string",
+          "minLength": 1
+        },
+        "migration": {
+          "$ref": "#/$defs/ResolvedMigration"
+        },
+        "exposure": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedExposure"
+          }
+        },
+        "processes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedProcess"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "project",
+        "namespace",
+        "reconcileUnit",
+        "processes"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "processes": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": [
+                "switchover"
+              ],
+              "properties": {
+                "switchover": {
+                  "const": "blue-green"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "releaseGate"
+        ],
+        "properties": {
+          "releaseGate": true
+        }
+      },
+      "else": {
+        "properties": {
+          "releaseGate": false
+        }
+      }
+    },
+    "AlertClass": {
+      "type": "string",
+      "enum": [
+        "business-hours",
+        "urgent",
+        "page"
+      ]
+    },
+    "ResolvedScrape": {
+      "type": "object",
+      "properties": {
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        }
+      },
+      "required": [
+        "process",
+        "surface",
+        "path",
+        "interval",
+        "timeout"
+      ],
+      "additionalProperties": false
+    },
+    "ReleaseGate": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deadline": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "analysis": {
+          "$ref": "#/$defs/GateAnalysis"
+        },
+        "members": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GateMember"
+          }
+        }
+      },
+      "required": [
+        "endpoint",
+        "deadline",
+        "analysis",
+        "members"
+      ],
+      "additionalProperties": false
+    },
+    "GateAnalysis": {
+      "type": "object",
+      "properties": {
+        "interval": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "interval",
+        "iterations",
+        "threshold"
+      ],
+      "additionalProperties": false
+    },
+    "GateMember": {
+      "type": "object",
+      "properties": {
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "readiness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResolvedHttpProbe"
+            },
+            {
+              "$ref": "#/$defs/ResolvedTcpProbe"
+            }
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalysisCheck"
+          }
+        }
+      },
+      "required": [
+        "process",
+        "readiness"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedHttpProbe": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "path",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedTcpProbe": {
+      "type": "object",
+      "properties": {
+        "tcp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "tcp"
+      ],
+      "additionalProperties": false
+    },
+    "AnalysisCheck": {
+      "type": "string",
+      "enum": [
+        "error-rate",
+        "latency"
+      ]
+    },
+    "ResolvedMigration": {
+      "type": "object",
+      "properties": {
+        "runner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "testedAgainst": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        },
+        "nonTransactional": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runner",
+        "nonTransactional"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedExposure": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "listener": {
+          "$ref": "#/$defs/Listener"
+        },
+        "certificates": {
+          "$ref": "#/$defs/CertificateSource"
+        },
+        "proxy": {
+          "$ref": "#/$defs/TierProxy"
+        },
+        "routes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedRoute"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "tier",
+        "listener",
+        "certificates",
+        "proxy",
+        "routes"
+      ],
+      "additionalProperties": false
+    },
+    "Listener": {
+      "type": "string",
+      "enum": [
+        "tls",
+        "plain"
+      ]
+    },
+    "CertificateSource": {
+      "type": "string",
+      "enum": [
+        "acme",
+        "none"
+      ]
+    },
+    "TierProxy": {
+      "type": "object",
+      "properties": {
+        "application": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "application",
+        "namespace"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedRoute": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match": {
+          "$ref": "#/$defs/Match"
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audience": {
+          "$ref": "#/$defs/Audience"
+        },
+        "precedence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "middleware": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MiddlewareStep"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "match",
+        "process",
+        "surface",
+        "audience",
+        "precedence"
+      ],
+      "additionalProperties": false
+    },
+    "Match": {
+      "type": "string",
+      "enum": [
+        "prefix",
+        "exact"
+      ]
+    },
+    "Audience": {
+      "type": "string",
+      "enum": [
+        "anonymous",
+        "authenticated",
+        "internal",
+        "lan"
+      ]
+    },
+    "MiddlewareStep": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/MiddlewareKind"
+        },
+        "contentPolicy": {
+          "$ref": "#/$defs/ContentPolicy"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "redirectTo": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "MiddlewareKind": {
+      "type": "string",
+      "enum": [
+        "forward-auth",
+        "security-headers",
+        "redirect"
+      ]
+    },
+    "ContentPolicy": {
+      "type": "string",
+      "enum": [
+        "strict",
+        "admin",
+        "workflow"
+      ]
+    },
+    "ResolvedProcess": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        },
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cutover": {
+          "$ref": "#/$defs/Cutover"
+        },
+        "switchover": {
+          "$ref": "#/$defs/Switchover"
+        },
+        "deadline": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hardening": {
+          "$ref": "#/$defs/HardeningClass"
+        },
+        "identityToken": {
+          "type": "boolean"
+        },
+        "readiness": {
+          "$ref": "#/$defs/ResolvedProbe"
+        },
+        "liveness": {
+          "$ref": "#/$defs/ResolvedProbe"
+        },
+        "startup": {
+          "$ref": "#/$defs/StartupProbe"
+        },
+        "placement": {
+          "$ref": "#/$defs/ResolvedPlacement"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedVolume"
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ResolvedGrant"
+              },
+              {
+                "$ref": "#/$defs/ResolvedEngineGrant"
+              }
+            ]
+          }
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedAsset"
+          }
+        },
+        "sidecars": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedSidecar"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedEdge"
+          }
+        },
+        "writablePaths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WritablePath"
+          }
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnvEntry"
+          }
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedSurface"
+          }
+        },
+        "ingress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IngressPeer"
+          }
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EgressPeer"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "lifecycle",
+        "runtime",
+        "identity",
+        "image",
+        "uid",
+        "gid",
+        "deadline",
+        "replicas",
+        "memory",
+        "cpu",
+        "hardening",
+        "identityToken",
+        "placement"
+      ],
+      "additionalProperties": false,
+      "dependentRequired": {
+        "switchover": [
+          "cutover"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "cutover"
+            ],
+            "properties": {
+              "cutover": {
+                "const": "continuous"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "switchover": {
+                "enum": [
+                  "blue-green",
+                  "rolling"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "cutover"
+            ],
+            "properties": {
+              "cutover": {
+                "const": "interrupted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "switchover": {
+                "enum": [
+                  "stop-start"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Lifecycle": {
+      "type": "string",
+      "enum": [
+        "application",
+        "job",
+        "prepare"
+      ]
+    },
+    "Runtime": {
+      "type": "string",
+      "enum": [
+        "jvm",
+        "python",
+        "node",
+        "static",
+        "none"
+      ]
+    },
+    "Cutover": {
+      "type": "string",
+      "enum": [
+        "continuous",
+        "interrupted"
+      ]
+    },
+    "Switchover": {
+      "type": "string",
+      "enum": [
+        "blue-green",
+        "rolling",
+        "stop-start"
+      ]
+    },
+    "HardeningClass": {
+      "type": "string",
+      "enum": [
+        "restricted"
+      ]
+    },
+    "ResolvedProbe": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "period": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "path",
+            "port",
+            "period",
+            "timeout",
+            "failures"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tcp": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "period": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "tcp",
+            "period",
+            "timeout",
+            "failures"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StartupProbe": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "period": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "path",
+            "port",
+            "period",
+            "timeout",
+            "failures"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tcp": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "period": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "failures": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "tcp",
+            "period",
+            "timeout",
+            "failures"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ResolvedPlacement": {
+      "type": "object",
+      "properties": {
+        "eligibleNodes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "boundTo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "$ref": "#/$defs/PinnedInput"
+        }
+      },
+      "required": [
+        "eligibleNodes"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedVolume": {
+      "type": "object",
+      "properties": {
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1
+        },
+        "durability": {
+          "$ref": "#/$defs/DurabilityClass"
+        },
+        "backup": {
+          "$ref": "#/$defs/BackupPlan"
+        }
+      },
+      "required": [
+        "claim",
+        "mountAt",
+        "size",
+        "durability"
+      ],
+      "additionalProperties": false
+    },
+    "DurabilityClass": {
+      "type": "string",
+      "enum": [
+        "reconstructible",
+        "recoverable",
+        "irreplaceable"
+      ]
+    },
+    "BackupPlan": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retain": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "offCluster": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credential": {
+          "$ref": "#/$defs/ResolvedGrant"
+        }
+      },
+      "required": [
+        "schedule",
+        "retain",
+        "method",
+        "uid",
+        "gid",
+        "identity",
+        "claim"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedGrant": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "access": {
+          "$ref": "#/$defs/AccessTier"
+        },
+        "delivery": {
+          "$ref": "#/$defs/Delivery"
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fileMode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "restartTargets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "path",
+        "access",
+        "delivery"
+      ],
+      "additionalProperties": false
+    },
+    "AccessTier": {
+      "type": "string",
+      "enum": [
+        "read",
+        "self-renew",
+        "self-roll",
+        "custody"
+      ]
+    },
+    "Delivery": {
+      "type": "string",
+      "enum": [
+        "env",
+        "file",
+        "self"
+      ]
+    },
+    "ResolvedEngineGrant": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "transit",
+            "database"
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "const": "self"
+        },
+        "paths": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyPath"
+          }
+        },
+        "restartTargets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "engine",
+        "delivery",
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyPath": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allows": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "path",
+        "allows"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedAsset": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "from",
+        "mountAt",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedSidecar": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "image",
+        "memory",
+        "cpu"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedEdge": {
+      "type": "object",
+      "properties": {
+        "application": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "peers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyPeer"
+          }
+        }
+      },
+      "required": [
+        "application",
+        "surface",
+        "address"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyPeer": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "namespace",
+        "process",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "WritablePath": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "EnvEntry": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secret": {
+              "$ref": "#/$defs/SecretReference"
+            }
+          },
+          "required": [
+            "name",
+            "secret"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SecretReference": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedSurface": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "name",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "IngressPeer": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/IngressRule"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "rule",
+        "namespace",
+        "process",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "IngressRule": {
+      "type": "string",
+      "enum": [
+        "tier-proxy",
+        "metrics-stack",
+        "consumer"
+      ]
+    },
+    "EgressPeer": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/EgressRule"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "rule",
+        "namespace",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "EgressRule": {
+      "type": "string",
+      "enum": [
+        "cluster-dns",
+        "secret-store"
+      ]
+    }
+  }
+}

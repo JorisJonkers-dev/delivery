@@ -1,0 +1,77 @@
+{
+  "schema": "pin-annotations.schema.json",
+  "cases": [
+    {
+      "name": "a pin with no annotation",
+      "verdict": "accept",
+      "instance": {}
+    },
+    {
+      "name": "a paused pin",
+      "verdict": "accept",
+      "instance": {
+        "estate.jorisjonkers.dev/paused-by": "joris",
+        "estate.jorisjonkers.dev/paused-at": "2026-10-01T12:00:00+02:00",
+        "estate.jorisjonkers.dev/paused-reason": "the 2.1.3 release corrupts thumbnails"
+      }
+    },
+    {
+      "name": "a pin rolled back and paused",
+      "verdict": "accept",
+      "instance": {
+        "estate.jorisjonkers.dev/paused-by": "joris",
+        "estate.jorisjonkers.dev/paused-at": "2026-10-01T12:00:00+02:00",
+        "estate.jorisjonkers.dev/paused-reason": "the 2.1.3 release corrupts thumbnails",
+        "estate.jorisjonkers.dev/rollback-version": "2.1.2",
+        "estate.jorisjonkers.dev/rollback-fragment": "ghcr.io/jorisjonkers-dev/intent-knowledge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "an annotation the model does not have",
+      "verdict": "refuse",
+      "breaks": "unknown-field",
+      "case": "a paused pin",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/estate.jorisjonkers.dev~1colour",
+          "value": "blue"
+        }
+      ]
+    },
+    {
+      "name": "a pause with no reason",
+      "verdict": "refuse",
+      "breaks": "missing-required",
+      "case": "a paused pin",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/estate.jorisjonkers.dev~1paused-reason"
+        }
+      ]
+    },
+    {
+      "name": "a pause by a number",
+      "verdict": "refuse",
+      "breaks": "wrong-type",
+      "case": "a paused pin",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/estate.jorisjonkers.dev~1paused-by",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "a rollback that does not pause",
+      "verdict": "refuse",
+      "breaks": "union",
+      "instance": {
+        "estate.jorisjonkers.dev/rollback-version": "2.1.2",
+        "estate.jorisjonkers.dev/rollback-fragment": "ghcr.io/jorisjonkers-dev/intent-knowledge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}

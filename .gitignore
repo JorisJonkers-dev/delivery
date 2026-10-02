@@ -70,3 +70,5 @@ __pycache__/
 # Local build output
 bin/
 coverage.out
+coverage.handwritten.out
+.schemas-check/

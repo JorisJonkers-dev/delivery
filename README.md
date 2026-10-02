@@ -1,54 +1,66 @@
-# template-go
+# delivery
 
-A GitHub template repository for a Go service or controller in the
-[JorisJonkers-dev](https://github.com/JorisJonkers-dev) estate. A repository generated from it builds,
-tests and lints green with no edits.
+The in-cluster services of the estate's delivery path
+([JorisJonkers-dev/deploy-kit#195](https://github.com/JorisJonkers-dev/deploy-kit/issues/195)), in
+Go, and the `delivery` project that deploys them. Generated from
+[`template-go`](https://github.com/JorisJonkers-dev/template-go).
 
-The estate's decisions on this shape (the Go and Vue standard, and the repository templates) live in
-[`JorisJonkers-dev/workspace` docs/decisions](https://github.com/JorisJonkers-dev/workspace/tree/main/docs/decisions).
-Hygiene files (licence, security policy, `CODEOWNERS`, Renovate, editor config, release flow) come
-from [`repo-template`](https://github.com/JorisJonkers-dev/repo-template).
+| Service | State |
+|---------|-------|
+| Release Gate: answers Flagger's webhooks and fails closed | probes only; its answers land with JorisJonkers-dev/delivery#2 |
+| ClusterState Collector: commits the snapshot to the Estate repository | JorisJonkers-dev/delivery#4 |
+| Vault policy job: applies the rendered policies and roles | JorisJonkers-dev/delivery#5 |
 
 ## What is in it
 
 | Path | What it is |
 |------|------------|
-| `cmd/template-go/` | The binary: reads `ADDR` (default `:8080`), logs JSON with `slog`, drains on `SIGTERM` |
-| `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, graceful shutdown; unit tests |
-| `mise.toml` | Pins Go, task, golangci-lint, actionlint and gitleaks; `mise install` is the only setup |
-| `Taskfile.yml` | `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
-| `.golangci.yml` | golangci-lint v2 with gofumpt and goimports; zero issues required |
-| `Dockerfile` | Multi-stage, static binary on `distroless/static:nonroot` |
-| `.github/workflows/ci.yml` | One job, `Pipeline Complete`: `mise exec -- task check`, then `docker build` |
-| `.github/workflows/release.yml`, `release-please-config.json`, `.release-please-manifest.json` | release-please, as in the rest of the estate |
-| `deploy/template-go.project.yml` | A [deploy-kit](https://github.com/JorisJonkers-dev/deploy-kit) Project Intent for one stateless HTTP service |
+| `cmd/release-gate/` | The Release Gate binary: reads `ADDR` (default `:8080`), logs JSON with `slog`, drains on `SIGTERM` |
+| `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, graceful shutdown |
+| `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
+| `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
+| `scripts/sync-schemas.sh` | Fetches the vendored files from deploy-kit at one commit |
+| `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger and the Release Gate |
+| `Taskfile.yml` | `schemas:sync`, `schemas:check`, `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
 
-`task test` runs the race detector and fails below 80% statement coverage (`COVERAGE_MIN` in
-`Taskfile.yml`); the sample code sits at about 87%. `task gen` runs `go generate ./...` and
-`task gen:check` fails on a dirty or untracked result. Nothing generates yet, so both are no-ops.
+The rest (`mise.toml`, `.golangci.yml`, `Dockerfile`, the workflows, release-please) is
+`template-go`'s, unchanged but for the names.
 
-[`go-commons`](https://github.com/JorisJonkers-dev/go-commons) is used where it applies. It has no
-packages yet, so the template does not depend on it.
+## Generated types
 
-## Use it
+| Package | Root type | Schema |
+|---------|-----------|--------|
+| `internal/deploykit/resolved` | `ResolvedDeployment` | `resolved-deployment.schema.json` |
+| `internal/deploykit/lock` | `CompositionLock` | `composition-lock.schema.json` |
+| `internal/deploykit/pins` | `PinAnnotations` | `pin-annotations.schema.json` |
+| `internal/deploykit/clusterstate` | `Snapshot` | `cluster-state-snapshot.schema.json` |
 
-1. **Create the repository** with "Use this template" on GitHub.
-2. **Rename the module.** Replace `github.com/JorisJonkers-dev/template-go` with the new module path in
-   `go.mod`, `.golangci.yml` (the goimports prefix) and every import.
-3. **Rename the service.** Rename `cmd/template-go/` to `cmd/<name>`, then replace `template-go` in
-   `Taskfile.yml` (`APP`), `Dockerfile`, `.github/workflows/ci.yml` and `release.yml`.
-4. **Rename the project file.** Move `deploy/template-go.project.yml` to `deploy/<name>.project.yml`
-   and change `project`, `owner`, the Application `id`, the Process `name` and `image`, and the host.
-5. **Reset release state**: delete `CHANGELOG.md` if present and keep `.release-please-manifest.json`
-   at `0.0.0`.
-6. `mise install && task check`.
+[go-jsonschema](https://github.com/atombender/go-jsonschema), pinned as a `tool` in `go.mod`,
+generates each `types_gen.go`. Two gates hold the chain:
+
+- `task schemas:check` fails when the vendored files differ from deploy-kit at `DEPLOY_KIT_REF`.
+- `task gen:check` fails when a vendored schema changed and the types were not regenerated.
+
+A generated type decodes every document the corpus accepts, and refuses on decode a missing
+required field, a wrong type and a value outside an enum. It does not refuse an unknown field, a
+union no branch of which matches, or a cross-field rule: a service that must refuse those
+validates against the schema. The corpus test states this per schema.
+
+To take a newer deploy-kit:
+
+```bash
+# move DEPLOY_KIT_REF in Taskfile.yml, then
+task schemas:sync gen
+task check
+```
+
+## Run it
 
 ```bash
 mise install    # the pinned toolchain
-task check      # lint, gen:check, tests with coverage, build, secret scan
-docker build -t template-go .
+task check      # lint, schemas:check, gen:check, tests with coverage, build, secret scan
+docker build -t release-gate .
 ```
 
-Ruleset and project boarding are described in [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[`VERSIONING.md`](VERSIONING.md); `add-to-project.yml` should be deleted in a private repository,
-as its header explains.
+`task test` fails below 80% statement coverage of hand-written code (`COVERAGE_MIN` in
+`Taskfile.yml`); generated files are left out of that figure.

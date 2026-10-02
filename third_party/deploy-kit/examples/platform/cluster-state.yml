@@ -1,0 +1,16 @@
+# The ClusterState snapshot: what the cluster alone can say, captured once by
+# a read-only collector and pinned by digest
+# (spec/v1/20-resolved-deployment.md#cluster-state). Nothing reads the live
+# cluster; a changed fact is a new capture and a new digest.
+#
+# The worked estate has no bound PersistentVolume and records no placement yet,
+# so the snapshot is the empty one: both lists present, both empty.
+
+apiVersion: state.jorisjonkers.dev/v1
+kind: ClusterState
+schemaVersion: 1.0.0
+cluster: production
+capturedAt: "2026-09-30T00:00:00Z"
+
+bindings: []
+placements: []

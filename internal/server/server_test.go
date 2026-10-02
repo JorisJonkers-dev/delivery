@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JorisJonkers-dev/template-go/internal/server"
+	"github.com/JorisJonkers-dev/delivery/internal/server"
 )
 
 func newServer() *server.Server {

@@ -43,4 +43,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - "github.com/JorisJonkers-dev/template-go"
+        - "github.com/JorisJonkers-dev/delivery"

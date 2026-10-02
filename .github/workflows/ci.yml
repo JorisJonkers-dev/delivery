@@ -34,4 +34,4 @@ jobs:
 
       - name: Container image builds
         if: ${{ !cancelled() }}
-        run: docker build --build-arg VERSION=ci -t template-go:ci .
+        run: docker build --build-arg VERSION=ci -t release-gate:ci .

@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/CompositionLock",
+  "$defs": {
+    "CompositionLock": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "resolved.jorisjonkers.dev/v1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "CompositionLock"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "cluster": {
+              "type": "string",
+              "minLength": 1
+            },
+            "generatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          "required": [
+            "cluster",
+            "generatedAt"
+          ],
+          "additionalProperties": false
+        },
+        "spec": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "toolkitVersion": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "composedDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "previousLockDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "lockChain": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ChainLink"
+              }
+            },
+            "fragments": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/LockedFragment"
+              }
+            },
+            "isolated": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/Isolation"
+              }
+            },
+            "clusterStateDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "toolkitVersion",
+            "composedDigest",
+            "lockChain",
+            "fragments",
+            "clusterStateDigest"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "additionalProperties": false
+    },
+    "ChainLink": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "digest",
+        "commit",
+        "timestamp"
+      ],
+      "additionalProperties": false
+    },
+    "LockedFragment": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^(?:[^@\\s/]+\\/)+[^@\\s/:]+@sha256:[a-f0-9]{64}$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/[^/\\s]+$"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "revisions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          }
+        },
+        "sourceSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "inputsSha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "ref",
+        "project",
+        "repository",
+        "schemaVersion",
+        "version",
+        "revisions",
+        "sourceSha",
+        "inputsSha"
+      ],
+      "additionalProperties": false
+    },
+    "Isolation": {
+      "type": "object",
+      "properties": {
+        "refused": {
+          "type": "string",
+          "pattern": "^(?:[^@\\s/]+\\/)+[^@\\s/:]+@sha256:[a-f0-9]{64}$"
+        },
+        "codes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^E_[A-Z0-9_]+$"
+          }
+        }
+      },
+      "required": [
+        "refused",
+        "codes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
