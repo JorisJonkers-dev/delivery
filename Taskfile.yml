@@ -2,7 +2,10 @@
 version: "3"
 
 vars:
-  APP: release-gate
+  # Every command this repository builds; each is its own image, built with --build-arg APP=<name>.
+  APPS: release-gate collector
+  # The Kubernetes control plane the Collector's envtest case runs against.
+  ENVTEST_KUBERNETES: 1.36.2
   COVERAGE_MIN: 80
   # The deploy-kit commit the vendored schemas come from. Move it, then `task schemas:sync gen`.
   DEPLOY_KIT_REF: b9ac258f5ebe52a94e182ebeb23c7ea94af7aa98
@@ -63,19 +66,23 @@ tasks:
   test:
     desc: Go tests with the race detector and a {{.COVERAGE_MIN}}% statement coverage gate on hand-written code
     cmds:
-      - go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
-      # Generated code is held by the corpus test and gen:check, not by statement coverage.
-      - grep -v '_gen\.go:' coverage.out > coverage.handwritten.out
+      # The Collector's envtest case starts a real API server; setup-envtest fetches it once.
+      - KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{.ENVTEST_KUBERNETES}} -p path)" go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      # Generated code is held by the corpus test and gen:check, and the fake GitHub is a test
+      # double: neither is what the coverage figure is about.
+      - grep -v -e '_gen\.go:' -e '/githubtest/' coverage.out > coverage.handwritten.out
       - |
         total="$(go tool cover -func=coverage.handwritten.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
         echo "coverage: ${total}% (minimum {{.COVERAGE_MIN}}%)"
         awk -v t="$total" -v m="{{.COVERAGE_MIN}}" 'BEGIN { exit !(t >= m) }'
 
   build:
-    desc: Build the service binary
+    desc: Build every command
     env:
       CGO_ENABLED: "0"
-    cmd: go build -trimpath -o bin/{{.APP}} ./cmd/{{.APP}}
+    cmds:
+      - for: { var: APPS }
+        cmd: go build -trimpath -o bin/{{.ITEM}} ./cmd/{{.ITEM}}
 
   secrets:
     desc: Scan the working tree for secrets
@@ -98,5 +105,5 @@ tasks:
       - golangci-lint run --fix ./...
 
   run:
-    desc: Run the service locally on :8080
-    cmd: go run ./cmd/{{.APP}}
+    desc: Run the Release Gate locally on :8080
+    cmd: go run ./cmd/release-gate
