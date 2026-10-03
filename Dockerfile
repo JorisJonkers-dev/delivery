@@ -9,13 +9,15 @@ COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
+# The command this image runs: release-gate or collector. One Dockerfile, one image per command.
+ARG APP=release-gate
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/release-gate ./cmd/release-gate
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/app ./cmd/${APP}
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/release-gate /release-gate
+COPY --from=build /out/app /app
 EXPOSE 8080
 USER nonroot:nonroot
-ENTRYPOINT ["/release-gate"]
+ENTRYPOINT ["/app"]

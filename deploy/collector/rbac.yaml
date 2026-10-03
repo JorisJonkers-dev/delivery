@@ -1,0 +1,32 @@
+# Everything the ClusterState Collector may do in the cluster: get and list three kinds, and
+# nothing else (deploy-kit spec/v1/20-resolved-deployment.md#the-collector). It never applies.
+#
+# The envtest case in internal/collector applies this file as it is and proves both halves: the
+# Collector's reads succeed under it, and every other verb and kind it tries is refused.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector
+  namespace: delivery-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: delivery-collector
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes, persistentvolumeclaims, pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: delivery-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: delivery-collector
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: delivery-system
