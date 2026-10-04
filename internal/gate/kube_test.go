@@ -2,6 +2,7 @@ package gate_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -308,5 +309,38 @@ func TestAClusterThatDoesNotAnswerIsAnError(t *testing.T) {
 	}
 	if _, err := k.NewCopy(t.Context(), ns, "auth-api"); !errors.Is(err, errAway) {
 		t.Fatalf("pods: %v", err)
+	}
+}
+
+func TestFlaggerIsThePodsOfTheDeliveryProjectsFlaggerProcess(t *testing.T) {
+	at := func(name, namespace, instance string, ips ...string) *corev1.Pod {
+		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{"app.kubernetes.io/instance": instance}}}
+		for _, ip := range ips {
+			p.Status.PodIPs = append(p.Status.PodIPs, corev1.PodIP{IP: ip})
+		}
+		return p
+	}
+	k := kube([]runtime.Object{
+		at("flagger-1", "delivery-system", "flagger", "10.42.0.7", "fd00::7"),
+		at("flagger-2", "delivery-system", "flagger", "10.42.1.9"),
+		at("flagger-starting", "delivery-system", "flagger"),
+		// The gate itself, and a pod that only calls itself Flagger somewhere else.
+		at("release-gate-1", "delivery-system", "release-gate", "10.42.0.8"),
+		at("flagger-1", "auth-system", "flagger", "10.42.3.3"),
+	})
+
+	got, err := k.Flagger(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	if want := []string{"10.42.0.7", "10.42.1.9", "fd00::7"}; !slices.Equal(got, want) {
+		t.Fatalf("Flagger's addresses = %v, want %v", got, want)
+	}
+
+	client := fake.NewClientset()
+	client.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, errAway })
+	if _, err := (gate.Kube{Client: client}).Flagger(t.Context()); !errors.Is(err, errAway) {
+		t.Fatalf("Flagger's pods, unreadable: %v", err)
 	}
 }

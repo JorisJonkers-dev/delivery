@@ -6,7 +6,8 @@
 #   jobs        list  an Application's migration and prepare Jobs
 #   canaries    get   each member's Canary: the revision it carries, and Flagger's record of it
 #   deployments get   a member's Deployment and its primary, to see that an unchanged member is one
-#   pods        list  the pods of a member's new copy
+#   pods        list  the pods of a member's new copy, and Flagger's own, whose addresses are
+#                     the only callers it answers
 #
 # RBAC cannot name a ConfigMap by a pattern, so `get` on ConfigMaps is every ConfigMap's. The
 # gate asks only for the one named for the Application a Canary's webhook carries.

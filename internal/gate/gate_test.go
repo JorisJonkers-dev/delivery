@@ -23,11 +23,25 @@ type cluster struct {
 	pods     map[string][]gate.Pod
 	// changed names the members whose Deployment no longer holds what their primary runs.
 	changed map[string]bool
+	// strangers makes every caller of the test server someone other than Flagger.
+	strangers bool
 	// away names the read that fails, as an unreachable API server would fail it.
 	away string
 }
 
 var errAway = errors.New("the API server is away")
+
+// Flagger's pods: the test server is called from this machine, and "not an address" is what a
+// pod with a malformed address would report.
+func (c *cluster) Flagger(context.Context) ([]string, error) {
+	if c.away == "flagger" {
+		return nil, errAway
+	}
+	if c.strangers {
+		return []string{"10.42.0.7", "not an address"}, nil
+	}
+	return []string{"10.42.0.7", "127.0.0.1", "::1"}, nil
+}
 
 func (c *cluster) Inputs(context.Context, string, string) (string, error) {
 	if c.away == "inputs" {

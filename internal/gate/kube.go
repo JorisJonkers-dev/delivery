@@ -36,6 +36,28 @@ type Kube struct {
 
 var _ Cluster = Kube{}
 
+// Flagger is deployed by this repository's own project: the `flagger` Process of the `delivery`
+// project (deploy/delivery.project.yml), whose namespace and labels the render derives.
+const (
+	flaggerNamespace = "delivery-system"
+	flaggerInstance  = "flagger"
+)
+
+// Flagger implements Cluster: every address of every pod of the `flagger` Process.
+func (k Kube) Flagger(ctx context.Context) ([]string, error) {
+	list, err := k.Client.CoreV1().Pods(flaggerNamespace).List(ctx, metav1.ListOptions{LabelSelector: labelInstance + "=" + flaggerInstance})
+	if err != nil {
+		return nil, err
+	}
+	var addresses []string
+	for _, pod := range list.Items {
+		for _, ip := range pod.Status.PodIPs {
+			addresses = append(addresses, ip.IP)
+		}
+	}
+	return addresses, nil
+}
+
 // Inputs implements Cluster.
 func (k Kube) Inputs(ctx context.Context, namespace, application string) (string, error) {
 	cm, err := k.Client.CoreV1().ConfigMaps(namespace).Get(ctx, InputsName(application), metav1.GetOptions{})

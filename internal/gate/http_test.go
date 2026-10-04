@@ -160,3 +160,67 @@ func TestOnlyAPostAsks(t *testing.T) {
 		t.Fatalf("GET = %d", resp.StatusCode)
 	}
 }
+
+func TestOnlyFlaggerIsAnswered(t *testing.T) {
+	paths := []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote}
+
+	// Anyone else gets one answer whatever they ask, well-formed or not, about a real member or
+	// not: nothing of the cluster is read for them, so nothing of it is said.
+	stranger := auth()
+	stranger.strangers = true
+	stranger.away = "inputs"
+	srv, logged := serve(t, stranger)
+	for _, path := range paths {
+		for _, body := range []string{flagger("auth-api", "Progressing"), flagger("no-such-member", "Progressing"), "not json"} {
+			if status, said := post(t, srv, path, body); status != http.StatusForbidden || said != "only Flagger asks the Release Gate" {
+				t.Fatalf("%s from a stranger = %d %q", path, status, said)
+			}
+		}
+	}
+	if strings.Contains(logged.String(), "level=ERROR") {
+		t.Fatalf("a stranger's question is not the gate failing: %s", logged)
+	}
+
+	// Who Flagger is cannot be read: the gate cannot answer, which is no.
+	blind := auth()
+	blind.away = "flagger"
+	srv, _ = serve(t, blind)
+	for _, path := range paths {
+		if status, _ := post(t, srv, path, flagger("auth-api", "Progressing")); status != http.StatusServiceUnavailable {
+			t.Fatalf("%s with Flagger's pods unreadable = %d", path, status)
+		}
+	}
+}
+
+func TestACallerIsFlaggerByTheAddressItsConnectionComesFrom(t *testing.T) {
+	mux := http.NewServeMux()
+	gate.New(auth()).Routes(mux, slog.New(slog.DiscardHandler))
+	from := func(remote string, headers map[string]string) int {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, gate.PathChecks, strings.NewReader(flagger("auth-api", "Progressing")))
+		req.RemoteAddr = remote
+		for name, value := range headers {
+			req.Header.Set(name, value)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	for remote, want := range map[string]int{
+		"10.42.0.7:40112":          http.StatusOK,
+		"[::1]:40112":              http.StatusOK,
+		"[::ffff:10.42.0.7]:40112": http.StatusOK, // the same pod, as a dual-stack listener reports it
+		"10.42.0.8:40112":          http.StatusForbidden,
+		"flagger.example:40112":    http.StatusForbidden,
+		"10.42.0.7":                http.StatusForbidden, // no port: not an address a connection has
+		"":                         http.StatusForbidden,
+	} {
+		if got := from(remote, nil); got != want {
+			t.Fatalf("a caller from %q = %d, want %d", remote, got, want)
+		}
+	}
+	// A header anyone can write is not where a connection comes from.
+	if got := from("10.42.0.8:40112", map[string]string{"X-Forwarded-For": "10.42.0.7", "X-Real-Ip": "10.42.0.7"}); got != http.StatusForbidden {
+		t.Fatalf("a stranger naming Flagger in a header = %d", got)
+	}
+}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 )
 
 // The paths a Canary's three webhooks name, under the gate's endpoint.
@@ -44,9 +47,38 @@ func (p payload) question() (Question, error) {
 	return q, nil
 }
 
+// refused is what the gate tells anyone who is not Flagger. It is the same for every question, so
+// it says nothing of what is deployed.
+const refused = "only Flagger asks the Release Gate"
+
+// fromFlagger reports whether a request comes from one of Flagger's pods. Flagger sends no
+// credential a webhook could carry, so the gate goes by where the connection comes from: a pod's
+// address is its own inside the cluster. A forwarded-for header is not read: anyone can write one.
+func (g *Gate) fromFlagger(r *http.Request) (bool, error) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false, nil //nolint:nilerr // an address that does not parse is not Flagger's
+	}
+	caller, err := netip.ParseAddr(host)
+	if err != nil {
+		return false, nil //nolint:nilerr // an address that does not parse is not Flagger's
+	}
+	pods, err := g.cluster.Flagger(r.Context())
+	if err != nil {
+		return false, fmt.Errorf("gate: read Flagger's pods: %w", err)
+	}
+	for _, pod := range pods {
+		if address, err := netip.ParseAddr(pod); err == nil && address.Unmap() == caller.Unmap() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Routes mounts the three webhooks. Flagger reads a 2xx as yes and anything else as no, so the
-// status is the answer: 200 is yes, 409 is "not yet", 400 is a payload that asks nothing, and
-// 503 is a question the gate could not answer, which is also no. Flagger records a refusal's
+// status is the answer: 200 is yes, 409 is "not yet", 400 is a payload that asks nothing, 403
+// is a caller that is not Flagger, and 503 is a question the gate could not answer, which is
+// also no. Flagger records a refusal's
 // body on the Canary, so a 409 says what the release waits on.
 func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
 	for path, ask := range map[string]func(context.Context, Question) (Answer, error){
@@ -56,8 +88,10 @@ func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
 	} {
 		mux.HandleFunc("POST "+path, func(w http.ResponseWriter, r *http.Request) {
 			status, why := http.StatusOK, ""
-			got, err := asked(r, ask)
+			got, err := g.heard(r, ask)
 			switch {
+			case errors.Is(err, errNotFlagger):
+				status, why = http.StatusForbidden, refused
 			case errors.Is(err, errNotAQuestion):
 				status, why = http.StatusBadRequest, "the payload names no member, Application and revision"
 			case err != nil:
@@ -82,8 +116,18 @@ func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
 	}
 }
 
-// asked reads the question a request carries and puts it to ask.
-func asked(r *http.Request, ask func(context.Context, Question) (Answer, error)) (Answer, error) {
+var errNotFlagger = errors.New("gate: the caller is not Flagger")
+
+// heard checks who asks, reads the question the request carries, and puts it to ask. Nothing of
+// the request is read before the caller is known to be Flagger.
+func (g *Gate) heard(r *http.Request, ask func(context.Context, Question) (Answer, error)) (Answer, error) {
+	flagger, err := g.fromFlagger(r)
+	if err != nil {
+		return Answer{}, err
+	}
+	if !flagger {
+		return Answer{}, errNotFlagger
+	}
 	var p payload
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBody)).Decode(&p); err != nil {
 		return Answer{}, errNotAQuestion

@@ -6,10 +6,9 @@
 // release-gate inputs, its release Jobs, its members' Canaries and Deployments, and the pods of
 // the new copy. And it fails closed: an answer it cannot read is no.
 //
-// It answers a question only at the revision the asking member's Canary carries. A revision is
-// a digest nobody guesses, written in the Canary and nowhere a stranger reads, so a caller that
-// cannot read the Canary learns nothing from the gate, and a question about a render that has
-// been replaced is refused.
+// It answers Flagger and nobody else: a request is Flagger's when it comes from the address of
+// one of Flagger's pods (http.go). And it answers a question only at the revision the asking
+// member's Canary carries, so a question about a render that has been replaced is refused.
 //
 // The one thing it remembers is which revision each member last asked at. Flagger's status
 // carries no revision, so a member "waiting for promotion" could be waiting from the release
@@ -95,6 +94,8 @@ type Pod struct {
 // Cluster is what the gate reads. Every method reports a thing that is not there as an error:
 // the gate does not tell "absent" from "unreadable", because neither is an answer.
 type Cluster interface {
+	// Flagger returns the addresses of Flagger's own pods: the only callers the gate answers.
+	Flagger(ctx context.Context) ([]string, error)
 	// Inputs returns the Application's release-gate ConfigMap's one value.
 	Inputs(ctx context.Context, namespace, application string) (string, error)
 	// Jobs returns the Jobs of the Application: every one labelled as part of it.

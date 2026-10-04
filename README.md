@@ -74,8 +74,8 @@ and the Application revision, and the gate reads the rest from the cluster.
 | `confirm-promotion` | `POST /may-promote` | every member of the Application has passed its analysis for this revision or did not change in it: the barrier |
 
 Flagger reads a 2xx as yes and anything else as no, so the status is the answer: `200` yes, `409`
-not yet, with what it waits on, `400` a payload that asks nothing, `503` a question the gate could
-not answer. Flagger records a refusal's words on the Canary.
+not yet, with what it waits on, `400` a payload that asks nothing, `403` a caller that is not
+Flagger, `503` a question the gate could not answer. Flagger records a refusal's words on the Canary.
 
 - **It decides from the cluster.** Every answer is read when it is asked: the Application's
   `<application>-release-gate` ConfigMap, its Jobs, its members' Canaries and Deployments, the
@@ -88,13 +88,15 @@ not answer. Flagger records a refusal's words on the Canary.
 - **It fails closed.** A ConfigMap that is missing or does not parse, a Process that is no member
   of it, a Canary of another Application, a list it cannot read: each is a `503`, and the cause
   goes to the log, not the reply.
-- **It answers only at the revision the asking member's Canary carries.** The gate has no
-  callers to authenticate: Flagger sends no credential. The revision is a digest nobody guesses,
-  written in the Canary and the ConfigMap and nowhere a stranger reads, so a caller that cannot
-  read the Canary gets the same refusal whatever it asks, and a question about a render that has
-  been replaced is refused too. The gate changes nothing in the cluster, so an answer is all a
-  caller can get from it, and the `delivery` project's derived policy admits Flagger alone: its
-  edge to the gate is the only one declared.
+- **It answers Flagger and nobody else.** Flagger sends no credential a webhook could carry, so
+  the gate goes by where the connection comes from: the address of one of the `flagger` Process's
+  pods in `delivery-system`, read from the cluster on each request. Anyone else gets one `403`
+  whatever they ask, before anything of the request or the cluster is read. A forwarded-for
+  header is not read. The `delivery` project's derived policy says the same at the network:
+  Flagger's edge to the gate is the only one declared.
+- **It answers only at the revision the asking member's Canary carries.** A question about a
+  render that has been replaced, or about a Canary that is not there, is refused, and the two
+  read the same.
 - **A release's steps are read off its Jobs.** The inputs do not name them, so every identity
   that has ever run a release Job of the Application is a step, and its Job of this revision must
   be there and complete. A Job that is not applied yet is a step not done, never a step the
