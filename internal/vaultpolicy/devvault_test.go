@@ -139,6 +139,18 @@ func TestAgainstADevVaultThePoliciesAndRolesMatchTheRender(t *testing.T) {
 	}
 	admin(t, vault, http.MethodGet, "sys/policies/acl/notes-system-notes-api", "")
 	admin(t, vault, http.MethodGet, "auth/kubernetes/role/notes-system-notes-api", "")
+
+	// A selector someone gave a role admits namespaces the render never named: the next run
+	// writes the role again, and Vault holds it without one.
+	admin(t, vault, http.MethodPost, "auth/kubernetes/role/data-system-postgres", `{"bound_service_account_namespace_selector":"{\"matchLabels\":{\"team\":\"any\"}}"}`)
+	third, err := vaultpolicy.Apply(t.Context(), vault, documents)
+	if err != nil || !slices.Equal(third.Written, []string{"role data-system-postgres"}) {
+		t.Fatalf("third run = %+v, %v", third, err)
+	}
+	role = admin(t, vault, http.MethodGet, "auth/kubernetes/role/data-system-postgres", "")
+	if data, _ := role["data"].(map[string]any); data["bound_service_account_namespace_selector"] != "" {
+		t.Fatalf("the role Vault holds = %v", data)
+	}
 }
 
 // tokenFor mints a token holding one policy, to ask Vault what that policy grants.

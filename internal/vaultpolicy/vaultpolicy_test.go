@@ -180,6 +180,10 @@ func TestTheRenderedDocumentsAreReadByName(t *testing.T) {
 	if len(got) != 2 || got[0].Name != "auth-system-auth-api" || got[1].Name != "data-system-postgres" {
 		t.Fatalf("documents = %+v", got)
 	}
+	// The policy is the encoding of what was checked, whatever the file's own spelling.
+	if want := "{\n  \"path\": {\n    \"database/creds/auth\": {\n      \"capabilities\": [\n        \"read\"\n      ]\n    },\n    \"transit/sign/auth-api-jwt\": {\n      \"capabilities\": [\n        \"update\"\n      ]\n    }\n  }\n}\n"; got[0].Policy != want {
+		t.Fatalf("auth-api's policy = %q", got[0].Policy)
+	}
 	want := vaultpolicy.Role{ServiceAccounts: []string{"postgres"}, Namespaces: []string{"data-system"}, Policies: []string{"data-system-postgres"}}
 	if got[1].Policy != postgresPolicy || !slices.Equal(got[1].Role.ServiceAccounts, want.ServiceAccounts) ||
 		!slices.Equal(got[1].Role.Namespaces, want.Namespaces) || !slices.Equal(got[1].Role.Policies, want.Policies) {
@@ -222,6 +226,32 @@ func TestADirectoryThatHoldsAnythingButTheRendersDocumentsIsRefusedWhole(t *test
 		"a policy with a segment glob":   {"data-system-postgres.policy.json": grants("secret/data/+/token"), "data-system-postgres.role.json": postgresRole},
 		"a policy that climbs out":       {"data-system-postgres.policy.json": grants("secret/data/../../sys/raw"), "data-system-postgres.role.json": postgresRole},
 		"a policy on the mount's parent": {"data-system-postgres.policy.json": grants("secret/config"), "data-system-postgres.role.json": postgresRole},
+		"a policy on the mount itself":   {"data-system-postgres.policy.json": grants("secret/data/"), "data-system-postgres.role.json": postgresRole},
+		"a policy on a templated path":   {"data-system-postgres.policy.json": grants("secret/data/{{identity.entity.name}}"), "data-system-postgres.role.json": postgresRole},
+		"a policy on a key's own record": {"data-system-postgres.policy.json": grants("transit/keys/auth-api-jwt"), "data-system-postgres.role.json": postgresRole},
+		"a policy that exports a key":    {"data-system-postgres.policy.json": grants("transit/export/signing-key/auth-api-jwt"), "data-system-postgres.role.json": postgresRole},
+		"a policy on every credential":   {"data-system-postgres.policy.json": grants("database/creds/auth/extra"), "data-system-postgres.role.json": postgresRole},
+		// And only what a grant may do there.
+		"a policy that grants sudo": {
+			"data-system-postgres.policy.json": `{"path":{"secret/data/platform/postgres/exporter":{"capabilities":["read","sudo"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		"a policy that writes a credential": {
+			"data-system-postgres.policy.json": `{"path":{"database/creds/auth":{"capabilities":["update"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		"a policy that grants nothing on a path": {
+			"data-system-postgres.policy.json": `{"path":{"secret/data/platform/postgres/exporter":{"capabilities":[]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		// One value, and nothing a second parser could read after it.
+		"a policy followed by another": {
+			"data-system-postgres.policy.json": postgresPolicy + `{"path":{"sys/policies/acl/root":{"capabilities":["sudo"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		"a role followed by another": {"data-system-postgres.policy.json": postgresPolicy, "data-system-postgres.role.json": postgresRole + postgresRole},
+		// A role binds an identity of a Project's namespace, by name alone.
+		"a role outside a Project's namespace": {"default-builder.policy.json": postgresPolicy, "default-builder.role.json": role("builder", "default", "default-builder")},
+		"a role with a namespace selector": {
+			"data-system-postgres.policy.json": postgresPolicy,
+			"data-system-postgres.role.json":   `{"bound_service_account_names":["postgres"],"bound_service_account_namespaces":["data-system"],"token_policies":["data-system-postgres"],"bound_service_account_namespace_selector":"{\"matchLabels\":{}}"}`,
+		},
 		// A name becomes a path in Vault's API.
 		"a name that is a path": {"Data_System.policy.json": postgresPolicy, "Data_System.role.json": postgresRole},
 	}
@@ -282,6 +312,8 @@ func TestARunWritesWhatVaultDoesNotHoldAsRenderedAndLeavesTheRest(t *testing.T) 
 	for field, change := range map[string]func(*vaultpolicy.Role){
 		"service accounts": func(r *vaultpolicy.Role) { r.ServiceAccounts = []string{"other"} },
 		"policies":         func(r *vaultpolicy.Role) { r.Policies = []string{"other"} },
+		// A selector admits more namespaces than the one named, so a role that gained one is not as rendered.
+		"namespace selector": func(r *vaultpolicy.Role) { r.NamespaceSelector = `{"matchLabels":{"team":"any"}}` },
 	} {
 		role := f.roles["data-system-postgres"]
 		change(&role)

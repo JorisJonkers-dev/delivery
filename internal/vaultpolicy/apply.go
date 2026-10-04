@@ -21,7 +21,7 @@ type Report struct {
 // rendered reports whether a name has the form the render gives one: `<project>-system-<identity>`.
 // It is how the job tells what the render once wrote from the platform's own fixtures.
 func rendered(name string) bool {
-	project, identity, found := strings.Cut(name, "-system-")
+	project, identity, found := strings.Cut(name, namespaceSuffix+"-")
 	return found && project != "" && identity != ""
 }
 
@@ -72,7 +72,7 @@ func writeRole(ctx context.Context, vault Vault, d Document) (string, error) {
 		return "", fmt.Errorf("vaultpolicy: read the role %s: %w", d.Name, err)
 	}
 	same := slices.Equal(held.ServiceAccounts, d.Role.ServiceAccounts) && slices.Equal(held.Namespaces, d.Role.Namespaces) &&
-		slices.Equal(held.Policies, d.Role.Policies)
+		slices.Equal(held.Policies, d.Role.Policies) && held.NamespaceSelector == d.Role.NamespaceSelector
 	if found && same {
 		return "", nil
 	}

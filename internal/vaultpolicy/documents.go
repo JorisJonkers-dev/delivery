@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,10 +28,27 @@ const (
 // name is what a document may be called: it becomes a path in Vault's API.
 var name = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`) //nolint:gochecknoglobals // a compiled constant
 
-// mounts are the paths a grant can derive (deploy-kit spec/v1/10-project-intent.md#secrets): a kv
-// document and its metadata, a database credential, a transit key. A policy on anything else,
-// Vault's own `sys/` and `auth/` above all, is not one the render writes.
-var mounts = []string{"secret/data/", "secret/metadata/", "database/creds/", "transit/"} //nolint:gochecknoglobals // a constant list
+// namespaceSuffix ends every namespace the render derives, a Project's own
+// (deploy-kit spec/v1/16-dependencies.md#process-identity).
+const namespaceSuffix = "-system"
+
+// segment is one step of a path a grant names: no glob, no `+`, no template, no `..`, not empty.
+const segment = `[A-Za-z0-9_][A-Za-z0-9_.-]*`
+
+// grantable are the forms of path a grant derives (deploy-kit spec/v1/10-project-intent.md#secrets),
+// each with what a grant may do there: a kv document and its metadata, a database credential,
+// a transit operation on one key. A path of any other form, Vault's own `sys/` and `auth/`
+// above all, or a capability the form does not carry, `sudo` above all, is not one the render
+// writes. A form the render gains is refused until this list gains it.
+var grantable = []struct { //nolint:gochecknoglobals // a constant list
+	path         *regexp.Regexp
+	capabilities []string
+}{
+	{regexp.MustCompile(`^secret/(data|metadata)/` + segment + `(/` + segment + `)*$`), []string{"create", "delete", "list", "patch", "read", "update"}},
+	{regexp.MustCompile(`^database/creds/` + segment + `$`), []string{"read"}},
+	{regexp.MustCompile(`^transit/(sign|verify|encrypt|decrypt)/` + segment + `$`), []string{"update"}},
+	{regexp.MustCompile(`^transit/keys/` + segment + `/rotate$`), []string{"update"}},
+}
 
 // Role is a Kubernetes auth role as the render writes it: one ServiceAccount of one namespace,
 // bound to the one policy of the same name.
@@ -38,14 +56,25 @@ type Role struct {
 	ServiceAccounts []string `json:"bound_service_account_names"`
 	Namespaces      []string `json:"bound_service_account_namespaces"`
 	Policies        []string `json:"token_policies"`
+	// NamespaceSelector admits every namespace a label selects, beside the ones named. The
+	// render never writes one, so the job writes it empty, which clears one Vault holds.
+	NamespaceSelector string `json:"bound_service_account_namespace_selector"`
 }
 
 // Document is one identity's policy and role, under the name Vault holds both by.
 type Document struct {
 	Name string
-	// Policy is the policy's text, as rendered.
+	// Policy is the policy's text: the encoding of what the job read and checked, never the
+	// file's own bytes, so Vault parses nothing the check did not.
 	Policy string
 	Role   Role
+}
+
+// rules is a policy as the render writes it: what may be done, by path.
+type rules struct {
+	Path map[string]struct {
+		Capabilities []string `json:"capabilities"`
+	} `json:"path"`
 }
 
 // Read reads every identity's two documents from dir, by name. A directory that holds anything
@@ -71,8 +100,8 @@ func Read(dir string) ([]Document, error) {
 		if !paired {
 			return nil, fmt.Errorf("vaultpolicy: %s has a policy and no role", identity)
 		}
-		document := Document{Name: identity, Policy: policies[identity], Role: role}
-		if err := document.check(); err != nil {
+		document, err := checked(identity, policies[identity], role)
+		if err != nil {
 			return nil, err
 		}
 		documents = append(documents, document)
@@ -103,9 +132,7 @@ func load(dir string) (policies map[string]string, roles map[string]Role, err er
 			policies[strings.TrimSuffix(file, policySuffix)] = string(raw)
 		case strings.HasSuffix(file, roleSuffix):
 			var role Role
-			decoder := json.NewDecoder(strings.NewReader(string(raw)))
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&role); err != nil {
+			if err := decode(string(raw), &role); err != nil {
 				return nil, nil, fmt.Errorf("vaultpolicy: %s is not a role the render writes: %w", file, err)
 			}
 			roles[strings.TrimSuffix(file, roleSuffix)] = role
@@ -118,35 +145,60 @@ func load(dir string) (policies map[string]string, roles map[string]Role, err er
 
 var errNotRendered = errors.New("is not a document the render writes")
 
-// check holds a document to the shape the render gives it, so nothing this job writes can be
-// more than a grant derives: the role binds the one ServiceAccount the name is for to the one
-// policy of that name, and the policy grants only where a grant can.
-func (d Document) check() error {
-	if !name.MatchString(d.Name) {
-		return fmt.Errorf("vaultpolicy: the name %q %w", d.Name, errNotRendered)
-	}
-	r := d.Role
-	if len(r.ServiceAccounts) != 1 || len(r.Namespaces) != 1 || d.Name != r.Namespaces[0]+"-"+r.ServiceAccounts[0] {
-		return fmt.Errorf("vaultpolicy: the role of %s binds another identity than its name: %w", d.Name, errNotRendered)
-	}
-	if len(r.Policies) != 1 || r.Policies[0] != d.Name {
-		return fmt.Errorf("vaultpolicy: the role of %s binds another policy than its own: %w", d.Name, errNotRendered)
-	}
-	var policy struct {
-		Path map[string]struct {
-			Capabilities []string `json:"capabilities"`
-		} `json:"path"`
-	}
-	decoder := json.NewDecoder(strings.NewReader(d.Policy))
+// decode reads text as the one JSON value it is, with no field out does not have and nothing
+// after it.
+func decode(text string, out any) error {
+	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&policy); err != nil {
-		return fmt.Errorf("vaultpolicy: the policy of %s does not parse: %w", d.Name, err)
+	if err := decoder.Decode(out); err != nil {
+		return err
 	}
-	for path := range policy.Path {
-		granted := slices.ContainsFunc(mounts, func(mount string) bool { return strings.HasPrefix(path, mount) })
-		if !granted || strings.Contains(path, "..") || strings.ContainsAny(path, "*+") {
-			return fmt.Errorf("vaultpolicy: the policy of %s grants %q: %w", d.Name, path, errNotRendered)
-		}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("more than one value: %w", errNotRendered)
 	}
 	return nil
+}
+
+// checked holds a document to the shape the render gives it, so nothing this job writes can be
+// more than a grant derives: the role binds the one ServiceAccount the name is for, in a
+// Project's namespace, to the one policy of that name, and the policy grants only where a grant
+// can and only what a grant may. The policy it returns is the encoding of what it checked.
+func checked(identity, policy string, r Role) (Document, error) {
+	if !name.MatchString(identity) {
+		return Document{}, fmt.Errorf("vaultpolicy: the name %q %w", identity, errNotRendered)
+	}
+	if len(r.ServiceAccounts) != 1 || len(r.Namespaces) != 1 || identity != r.Namespaces[0]+"-"+r.ServiceAccounts[0] ||
+		!strings.HasSuffix(r.Namespaces[0], namespaceSuffix) || r.NamespaceSelector != "" {
+		return Document{}, fmt.Errorf("vaultpolicy: the role of %s binds another identity than its name: %w", identity, errNotRendered)
+	}
+	if len(r.Policies) != 1 || r.Policies[0] != identity {
+		return Document{}, fmt.Errorf("vaultpolicy: the role of %s binds another policy than its own: %w", identity, errNotRendered)
+	}
+	var read rules
+	if err := decode(policy, &read); err != nil {
+		return Document{}, fmt.Errorf("vaultpolicy: the policy of %s does not parse: %w", identity, err)
+	}
+	for path, rule := range read.Path {
+		if !grants(path, rule.Capabilities) {
+			return Document{}, fmt.Errorf("vaultpolicy: the policy of %s grants %v on %q: %w", identity, rule.Capabilities, path, errNotRendered)
+		}
+	}
+	text, err := json.MarshalIndent(read, "", "  ")
+	if err != nil {
+		return Document{}, fmt.Errorf("vaultpolicy: the policy of %s: %w", identity, err)
+	}
+	return Document{Name: identity, Policy: string(text) + "\n", Role: r}, nil
+}
+
+// grants reports whether a grant can derive these capabilities on this path.
+func grants(path string, capabilities []string) bool {
+	if len(capabilities) == 0 {
+		return false
+	}
+	for _, form := range grantable {
+		if form.path.MatchString(path) {
+			return !slices.ContainsFunc(capabilities, func(c string) bool { return !slices.Contains(form.capabilities, c) })
+		}
+	}
+	return false
 }
