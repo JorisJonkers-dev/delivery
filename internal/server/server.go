@@ -18,16 +18,18 @@ const (
 	shutdownGrace     = 10 * time.Second
 )
 
-// Server serves /healthz and /readyz. Add the service's own routes in Handler.
+// Server serves /healthz and /readyz, and the service's own routes beside them.
 type Server struct {
 	logger  *slog.Logger
 	version string
+	routes  func(*http.ServeMux)
 	ready   atomic.Bool
 }
 
-// New returns a Server that logs to logger and reports version at startup.
-func New(logger *slog.Logger, version string) *Server {
-	return &Server{logger: logger, version: version}
+// New returns a Server that logs to logger and reports version at startup. routes mounts the
+// service's own routes on the mux the probes are on.
+func New(logger *slog.Logger, version string, routes func(*http.ServeMux)) *Server {
+	return &Server{logger: logger, version: version, routes: routes}
 }
 
 // Handler returns the routes. Liveness never depends on readiness.
@@ -43,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		plain(w, http.StatusOK, "ready")
 	})
+	s.routes(mux)
 	return mux
 }
 

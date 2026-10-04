@@ -1,0 +1,54 @@
+# Everything the Release Gate may do in the cluster: read five kinds, and nothing else
+# (deploy-kit spec/v1/55-delivery.md#the-release-gate). It never writes: starting a migration
+# or a prepare Job is JorisJonkers-dev/delivery#3, and brings its own verb with it.
+#
+#   configmaps  get   each Application's `<application>-release-gate`, in its own namespace
+#   jobs        list  an Application's migration and prepare Jobs
+#   canaries    get   each member's Canary: the revision it carries, and Flagger's record of it
+#   deployments get   a member's Deployment and its primary, to see that an unchanged member is one
+#   pods        list  the pods of a member's new copy
+#
+# RBAC cannot name a ConfigMap by a pattern, so `get` on ConfigMaps is every ConfigMap's. The
+# gate asks only for the one named for the Application a Canary's webhook carries.
+#
+# Rendering this grant, and mounting the token it needs, is the delivery project's own render
+# (JorisJonkers-dev/deploy-kit#202). Until then this file is the grant, applied by hand.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: release-gate
+  namespace: delivery-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: delivery-release-gate
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [list]
+  - apiGroups: [flagger.app]
+    resources: [canaries]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: delivery-release-gate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: delivery-release-gate
+subjects:
+  - kind: ServiceAccount
+    name: release-gate
+    namespace: delivery-system
