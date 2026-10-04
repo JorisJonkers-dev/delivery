@@ -9,7 +9,7 @@ Go, and the `delivery` project that deploys them. Generated from
 |---------|-------|
 | Release Gate: answers Flagger's webhooks and fails closed | answers all three, see [The Release Gate](#the-release-gate); not deployed yet. Migrations, the Down and held reporting are JorisJonkers-dev/delivery#3 |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
-| Vault policy job: applies the rendered policies and roles | JorisJonkers-dev/delivery#5 |
+| Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
 
 ## What is in it
 
@@ -23,6 +23,8 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
 | `internal/githubapp/` | One file of one repository, read and written as a GitHub App installation |
 | `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list three kinds |
+| `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
+| `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
 | `scripts/sync-schemas.sh` | Fetches the vendored files from deploy-kit at one commit |
@@ -122,6 +124,48 @@ Its grant is [`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml): `
 ConfigMaps, Canaries and Deployments, `list` on Jobs and pods. deploy-kit renders neither that grant nor the
 token it needs yet (JorisJonkers-dev/deploy-kit#202).
 
+## The Vault policy job
+
+deploy-kit renders a Vault policy and a Kubernetes auth role per identity that holds a grant, as
+two JSON documents named for what Vault holds them by, `<namespace>-<identity>`, and applies
+neither (deploy-kit `spec/v1/30-deliverables.md#vault-configuration-is-rendered-not-applied`).
+This job writes them. It is a Job of the `apps-vso-secrets` Reconcile Unit, so it runs before
+any Application that holds a grant, and the unit hands it the documents as files.
+
+| Variable | What it is |
+|----------|------------|
+| `VAULT_ADDR` | Vault's address |
+| `VAULT_ROLE` | the Kubernetes auth role it logs in as; defaults to `policy-admin`, a platform fixture |
+| `POLICIES_DIR` | where the documents are mounted; defaults to `/policies` |
+| `TOKEN_FILE` | its ServiceAccount token; defaults to the pod's own |
+
+- **The render is read whole before Vault is touched.** A directory holding anything that is not
+  a document the render writes is refused, and nothing is applied: half a render is not one.
+- **It writes no more than a grant derives.** A name has one reading: the Project stands before
+  the first `-system-` and the identity after it. A role must bind exactly that ServiceAccount
+  in exactly that Project's `<project>-system` namespace, to the one policy of that name, with
+  no namespace selector. A policy must grant only on the forms of path the render writes, each
+  with the capabilities that form carries and no other: `read` on a kv document under
+  `secret/data/` or `secret/metadata/`, `read` on `database/creds/<role>`, `update` on
+  `transit/<sign|verify|encrypt|decrypt>/<key>` and on `transit/keys/<key>/rotate`. No glob, no
+  `+`, no template, no `sudo`. So a document that reached the job by another road than the
+  render cannot bind another identity, or grant on Vault's own `sys/` and `auth/`. A form the
+  render gains is refused until the job's list gains it.
+- **Vault parses what the job checked.** The policy written is the job's own encoding of what it
+  read, not the file's bytes, so nothing a second parser would read differently reaches Vault.
+- **It leaves what is already as rendered alone**, and writes the policy before the role, so a
+  role never names a policy that is not there. A role that gained a namespace selector is not
+  as rendered: it is written again, without one.
+- **It never deletes.** What Vault holds under a name of the render's form, `<project>-system-…`,
+  that the render no longer names is logged as stale, for a human to remove. The platform's own
+  fixtures have no such name and are never reported.
+- **A call that fails stops the run**, with exit 1, which stops the Reconcile Unit: no
+  Application that holds a grant starts against policies Vault does not hold.
+
+deploy-kit does not render the Job itself yet, nor the ConfigMap that carries the documents
+(JorisJonkers-dev/deploy-kit#202). A grant deploy-kit does not render yet, `custody` and its
+prefix, will need the glob this job refuses today.
+
 ## The Collector
 
 Each run lists PersistentVolumes, PersistentVolumeClaims and the pods deploy-kit renders, and
@@ -156,6 +200,7 @@ the `CronJob` around it waits for that decision in deploy-kit.
 mise install    # the pinned toolchain
 task check      # lint, schemas:check, gen:check, tests with coverage, build, secret scan
 docker build --build-arg APP=release-gate -t release-gate .
+docker build --build-arg APP=vault-policy -t vault-policy .
 docker build --build-arg APP=collector -t collector .
 ```
 

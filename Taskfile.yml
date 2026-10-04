@@ -3,7 +3,7 @@ version: "3"
 
 vars:
   # Every command this repository builds; each is its own image, built with --build-arg APP=<name>.
-  APPS: release-gate collector
+  APPS: release-gate collector vault-policy
   # The Kubernetes control plane the Collector's envtest case runs against.
   ENVTEST_KUBERNETES: 1.36.2
   COVERAGE_MIN: 80

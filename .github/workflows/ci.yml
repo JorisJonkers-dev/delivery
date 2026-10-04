@@ -35,6 +35,6 @@ jobs:
       - name: Container image builds
         if: ${{ !cancelled() }}
         run: |
-          for app in release-gate collector; do
+          for app in release-gate collector vault-policy; do
             docker build --build-arg VERSION=ci --build-arg APP="$app" -t "$app:ci" .
           done
