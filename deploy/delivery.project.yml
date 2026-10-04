@@ -9,9 +9,10 @@
 # (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 #
 # The other two services this repository builds are not declared here. The ClusterState Collector
-# is a CronJob that reads three kinds cluster-wide, and Project Intent has neither a schedule nor
-# a cluster-wide read to declare yet (its grant is deploy/collector/rbac.yaml); the Vault policy
-# job runs in the platform's apps-vso-secrets Reconcile Unit, not in this project.
+# is a long-running Process that reads three kinds cluster-wide, and Project Intent has no
+# cluster-wide read to declare yet (its grant is deploy/collector/rbac.yaml,
+# JorisJonkers-dev/deploy-kit#202); the Vault policy job runs in the platform's apps-vso-secrets
+# Reconcile Unit, not in this project.
 
 apiVersion: intent.jorisjonkers.dev/v1
 kind: Project
