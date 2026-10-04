@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -81,6 +82,9 @@ var errNotTheRenders = errors.New("gate: the Canary's webhooks do not carry one 
 // revision; a Canary whose webhooks disagree, or carry neither, is not one the gate can read.
 func (k Kube) Canary(ctx context.Context, namespace, process string) (Canary, error) {
 	object, err := k.Dynamic.Resource(Canaries).Namespace(namespace).Get(ctx, process, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return Canary{}, ErrNoCanary
+	}
 	if err != nil {
 		return Canary{}, err
 	}
@@ -123,47 +127,63 @@ func (k Kube) Serves(ctx context.Context, namespace, process string) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	return running(target.Spec.Template.Spec, "") == running(primary.Spec.Template.Spec, primarySuffix), nil
+	return equality.Semantic.DeepEqual(target.Spec.Template.Spec, uncopied(primary.Spec.Template.Spec)), nil
 }
 
-// running spells what a pod template runs: each container's image, command, arguments and
-// variables, in the template's own order. copied is the suffix Flagger gave the names of the
-// configuration objects it copied, taken off so a primary reads as the Deployment it came from.
-func running(pod corev1.PodSpec, copied string) string {
-	var out strings.Builder
-	source := func(name string) string { return strings.TrimSuffix(name, copied) }
-	for _, c := range append(slices.Clone(pod.InitContainers), pod.Containers...) {
-		fmt.Fprintf(&out, "%q %q %q %q\n", c.Name, c.Image, c.Command, c.Args)
-		for _, e := range c.Env {
-			switch from := e.ValueFrom; {
-			case from == nil:
-				fmt.Fprintf(&out, " %q=%q\n", e.Name, e.Value)
-			case from.SecretKeyRef != nil:
-				fmt.Fprintf(&out, " %q secret %q %q\n", e.Name, source(from.SecretKeyRef.Name), from.SecretKeyRef.Key)
-			case from.ConfigMapKeyRef != nil:
-				fmt.Fprintf(&out, " %q configmap %q %q\n", e.Name, source(from.ConfigMapKeyRef.Name), from.ConfigMapKeyRef.Key)
-			default:
-				fmt.Fprintf(&out, " %q other\n", e.Name)
-			}
-		}
-		for _, f := range c.EnvFrom {
-			switch {
-			case f.SecretRef != nil:
-				fmt.Fprintf(&out, " from secret %q\n", source(f.SecretRef.Name))
-			case f.ConfigMapRef != nil:
-				fmt.Fprintf(&out, " from configmap %q\n", source(f.ConfigMapRef.Name))
-			}
+// uncopied is a primary's pod with the names Flagger gave its copies of the configuration put
+// back: every ConfigMap and Secret a volume, a variable or a container's environment names.
+// What is left differs from the member's own pod only where the member changed.
+func uncopied(primary corev1.PodSpec) corev1.PodSpec {
+	pod := *primary.DeepCopy()
+	source := func(name *string) { *name = strings.TrimSuffix(*name, primarySuffix) }
+	for i := range pod.Volumes {
+		uncopyVolume(&pod.Volumes[i], source)
+	}
+	for _, containers := range [][]corev1.Container{pod.InitContainers, pod.Containers} {
+		for i := range containers {
+			uncopyEnvironment(&containers[i], source)
 		}
 	}
-	for _, v := range pod.Volumes {
+	return pod
+}
+
+func uncopyVolume(v *corev1.Volume, source func(*string)) {
+	if v.ConfigMap != nil {
+		source(&v.ConfigMap.Name)
+	}
+	if v.Secret != nil {
+		source(&v.Secret.SecretName)
+	}
+	if v.Projected == nil {
+		return
+	}
+	for i := range v.Projected.Sources {
+		if p := &v.Projected.Sources[i]; p.ConfigMap != nil {
+			source(&p.ConfigMap.Name)
+		} else if p.Secret != nil {
+			source(&p.Secret.Name)
+		}
+	}
+}
+
+func uncopyEnvironment(c *corev1.Container, source func(*string)) {
+	for i := range c.Env {
+		from := c.Env[i].ValueFrom
 		switch {
-		case v.ConfigMap != nil:
-			fmt.Fprintf(&out, "volume %q configmap %q\n", v.Name, source(v.ConfigMap.Name))
-		case v.Secret != nil:
-			fmt.Fprintf(&out, "volume %q secret %q\n", v.Name, source(v.Secret.SecretName))
+		case from == nil:
+		case from.ConfigMapKeyRef != nil:
+			source(&from.ConfigMapKeyRef.Name)
+		case from.SecretKeyRef != nil:
+			source(&from.SecretKeyRef.Name)
 		}
 	}
-	return out.String()
+	for i := range c.EnvFrom {
+		if f := &c.EnvFrom[i]; f.ConfigMapRef != nil {
+			source(&f.ConfigMapRef.Name)
+		} else if f.SecretRef != nil {
+			source(&f.SecretRef.Name)
+		}
+	}
 }
 
 // NewCopy implements Cluster. Flagger's primary carries the member's `instance` and its own

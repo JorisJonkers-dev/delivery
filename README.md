@@ -77,10 +77,14 @@ Flagger reads a 2xx as yes and anything else as no, so the status is the answer:
 not yet, with what it waits on, `400` a payload that asks nothing, `503` a question the gate could
 not answer. Flagger records a refusal's words on the Canary.
 
-- **It keeps no state.** Every answer is read when it is asked: the Application's
+- **It decides from the cluster.** Every answer is read when it is asked: the Application's
   `<application>-release-gate` ConfigMap, its Jobs, its members' Canaries and Deployments, the
-  new copy's pods. A gate that restarts in the middle of a release answers the next question as
-  it would have.
+  new copy's pods.
+- **The one thing it remembers only ever withholds a yes.** Flagger's status carries no revision,
+  so a member read as waiting for promotion may be waiting from the release before. The gate
+  notes the revision each member last asked at, and counts a waiting member only once it has
+  asked at this one. A gate that restarts has no notes, and the barrier opens again as each
+  waiting member asks, which Flagger has it do on every tick.
 - **It fails closed.** A ConfigMap that is missing or does not parse, a Process that is no member
   of it, a Canary of another Application, a list it cannot read: each is a `503`, and the cause
   goes to the log, not the reply.

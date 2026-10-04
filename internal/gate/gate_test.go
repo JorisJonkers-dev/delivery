@@ -44,9 +44,12 @@ func (c *cluster) Jobs(context.Context, string, string) ([]gate.Job, error) {
 }
 
 func (c *cluster) Canary(_ context.Context, _, process string) (gate.Canary, error) {
-	canary, held := c.canaries[process]
-	if c.away == "canary" || !held {
+	if c.away == "canary" {
 		return gate.Canary{}, errAway
+	}
+	canary, held := c.canaries[process]
+	if !held {
+		return gate.Canary{}, gate.ErrNoCanary
 	}
 	return canary, nil
 }
@@ -87,8 +90,21 @@ func auth() *cluster {
 }
 
 // asks is the question the API's Canary puts, at the revision under release.
-func asks() gate.Question {
-	return gate.Question{Namespace: "auth-system", Application: "auth", Process: "auth-api", Revision: revision}
+func asks() gate.Question { return asksAs("auth-api") }
+
+func asksAs(process string) gate.Question {
+	return gate.Question{Namespace: "auth-system", Application: "auth", Process: process, Revision: revision}
+}
+
+// midRelease is a gate over c that the UI has already asked a question of at this revision, as
+// Flagger does on every tick of its analysis.
+func midRelease(t *testing.T, c *cluster) *gate.Gate {
+	t.Helper()
+	g := gate.New(c)
+	if _, err := g.Checks(t.Context(), asksAs("auth-ui")); err != nil {
+		t.Fatal(err)
+	}
+	return g
 }
 
 type question func(*gate.Gate, context.Context, gate.Question) (gate.Answer, error)
@@ -230,11 +246,50 @@ func TestNoMemberIsPromotedUntilEveryMemberHasPassed(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := gate.New(tc.cluster).MayPromote(t.Context(), asks())
+			got, err := midRelease(t, tc.cluster).MayPromote(t.Context(), asks())
 			if err != nil || got.Yes != tc.yes || got.Why != tc.why {
 				t.Fatalf("may-promote = %+v, %v", got, err)
 			}
 		})
+	}
+}
+
+func TestAMemberSeenWaitingCountsOnlyOnceItHasAskedAtThisRevision(t *testing.T) {
+	// Flagger's status carries no revision. A member read as waiting, promoting or finishing may
+	// be so from the release before, a moment before Flagger notices this one.
+	for _, phase := range []string{"WaitingPromotion", "Promoting", "Finalising"} {
+		c := auth()
+		c.canaries["auth-ui"] = of(phase, "u2", "u1", 4)
+		g := gate.New(c)
+
+		got, err := g.MayPromote(t.Context(), asks())
+		if err != nil || got.Yes || got.Why != "auth-ui has not asked at this revision yet" {
+			t.Fatalf("%s, never asked = %+v, %v", phase, got, err)
+		}
+		// It asks, at this revision, whatever the answer: Flagger is switching it at this one.
+		if _, err := g.MayStart(t.Context(), asksAs("auth-ui")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := g.MayPromote(t.Context(), asks()); err != nil || !got.Yes {
+			t.Fatalf("%s, once it asked = %+v, %v", phase, got, err)
+		}
+		// A gate that restarts remembers nothing, and so withholds the yes until it asks again.
+		if got, err := gate.New(c).MayPromote(t.Context(), asks()); err != nil || got.Yes {
+			t.Fatalf("%s, after a restart = %+v, %v", phase, got, err)
+		}
+	}
+
+	// A question at another revision than its Canary's is no evidence of this one.
+	c := auth()
+	c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
+	g := gate.New(c)
+	stale := asksAs("auth-ui")
+	stale.Revision = earlier
+	if _, err := g.Checks(t.Context(), stale); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := g.MayPromote(t.Context(), asks()); err != nil || got.Yes {
+		t.Fatalf("after a question at an earlier revision = %+v, %v", got, err)
 	}
 }
 
@@ -258,7 +313,7 @@ func TestTheMemberThatAsksIsHeldToItsOwnRecord(t *testing.T) {
 			c := auth()
 			c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
 			c.canaries["auth-api"] = tc.asker
-			got, err := gate.New(c).MayPromote(t.Context(), asks())
+			got, err := midRelease(t, c).MayPromote(t.Context(), asks())
 			if err != nil || got.Yes != tc.yes || got.Why != tc.why {
 				t.Fatalf("may-promote = %+v, %v", got, err)
 			}
@@ -273,12 +328,18 @@ func TestAQuestionIsAnsweredOnlyAtTheRevisionItsCanaryCarries(t *testing.T) {
 		c := auth()
 		c.canaries["auth-api"] = gate.Canary{Application: "auth", Revision: earlier, Phase: "WaitingPromotion", Iterations: 4}
 		c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
-		// Reading on would fail: the answer comes before any of it.
-		c.away = "jobs"
+		// Reading on would fail: the answer comes before any of it, the inputs included.
+		c.away = "inputs"
 		c.pods = nil
 		got, err := ask(gate.New(c), t.Context(), asks())
 		if err != nil || got.Yes || got.Why != "auth-api is not at this revision" {
 			t.Fatalf("%s = %+v, %v", name, got, err)
+		}
+		// A Canary that is not there reads the same: whether anything is deployed is not said.
+		delete(c.canaries, "auth-api")
+		absent, err := ask(gate.New(c), t.Context(), asks())
+		if err != nil || absent != got {
+			t.Fatalf("%s with no Canary = %+v, %v, want %+v", name, absent, err, got)
 		}
 	}
 }

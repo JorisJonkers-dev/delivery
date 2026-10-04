@@ -2,15 +2,20 @@
 // it passes an analysis iteration, and whether it may be promoted
 // (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 //
-// The gate keeps no state. Every answer is read from the cluster at the moment it is asked: the
-// Application's release-gate inputs, its release Jobs, its members' Canaries and Deployments,
-// and the pods of the new copy. A gate that restarts mid-release answers the next question as
-// it would have. And it fails closed: an answer it cannot read is no.
+// Every answer is read from the cluster at the moment it is asked: the Application's
+// release-gate inputs, its release Jobs, its members' Canaries and Deployments, and the pods of
+// the new copy. And it fails closed: an answer it cannot read is no.
 //
 // It answers a question only at the revision the asking member's Canary carries. A revision is
 // a digest nobody guesses, written in the Canary and nowhere a stranger reads, so a caller that
 // cannot read the Canary learns nothing from the gate, and a question about a render that has
 // been replaced is refused.
+//
+// The one thing it remembers is which revision each member last asked at. Flagger's status
+// carries no revision, so a member "waiting for promotion" could be waiting from the release
+// before; a member that has asked at this revision is one Flagger is switching at it. The
+// memory only ever withholds a yes: a gate that restarts has none, and the barrier opens again
+// as each waiting member asks, which it does on every tick.
 package gate
 
 import (
@@ -21,6 +26,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/JorisJonkers-dev/delivery/internal/deploykit/resolved"
 )
@@ -93,25 +99,45 @@ type Cluster interface {
 	Inputs(ctx context.Context, namespace, application string) (string, error)
 	// Jobs returns the Jobs of the Application: every one labelled as part of it.
 	Jobs(ctx context.Context, namespace, application string) ([]Job, error)
-	// Canary returns the member's Canary.
+	// Canary returns the member's Canary, and ErrNoCanary where there is none.
 	Canary(ctx context.Context, namespace, process string) (Canary, error)
 	// NewCopy returns the pods of the member's new copy, never its primary's.
 	NewCopy(ctx context.Context, namespace, process string) ([]Pod, error)
 	// Serves reports whether the member's primary runs what its Deployment now holds: the same
-	// containers, images, commands, arguments and variables. It is read off the two Deployments,
-	// not off Flagger's record, which is a tick behind a Deployment that just changed.
+	// pod, but for the names Flagger gives the configuration it copies. It is read off the two
+	// Deployments, not off Flagger's record, which is a tick behind a Deployment that just changed.
 	Serves(ctx context.Context, namespace, process string) (bool, error)
 }
 
 // Gate answers Flagger's three questions.
 type Gate struct {
 	cluster Cluster
+
+	mu sync.Mutex
+	// askedAt is the revision each member last asked a question at, by namespace and Process.
+	askedAt map[string]string
 }
 
 // New returns a Gate reading cluster.
-func New(cluster Cluster) *Gate { return &Gate{cluster: cluster} }
+func New(cluster Cluster) *Gate { return &Gate{cluster: cluster, askedAt: map[string]string{}} }
+
+func (g *Gate) noteAsked(q Question) {
+	g.mu.Lock()
+	g.askedAt[q.Namespace+"/"+q.Process] = q.Revision
+	g.mu.Unlock()
+}
+
+// askedHere reports whether the member has asked a question at the revision.
+func (g *Gate) askedHere(namespace, process, revision string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.askedAt[namespace+"/"+process] == revision
+}
 
 var errNotAMember = errors.New("gate: the Process is no member of the Application's release gate")
+
+// ErrNoCanary is what Cluster.Canary returns for a Canary that is not there.
+var ErrNoCanary = errors.New("gate: no such Canary")
 
 // reading is what every answer starts from: the Application's release-gate inputs, of which the
 // asking Process is a member, and that member's Canary.
@@ -123,10 +149,25 @@ type reading struct {
 // stale is the answer to a question about a revision the member's Canary does not carry.
 func stale(process string) Answer { return no("%s is not at this revision", process) }
 
-// ask reads the inputs and the asking member's Canary. current is false where the Canary
-// carries another revision than the question: the render the question is about is not the one
-// applied, and nothing more is read or said.
+// ask reads the asking member's Canary and then the inputs. current is false where the question
+// is not about the render that is applied: its Canary carries another revision, or there is no
+// such Canary. The two read the same from outside, and nothing more is read or said, so a
+// caller that cannot read the Canary learns neither what is deployed nor whether anything is.
 func (g *Gate) ask(ctx context.Context, q Question) (read reading, current bool, err error) {
+	read.canary, err = g.cluster.Canary(ctx, q.Namespace, q.Process)
+	if errors.Is(err, ErrNoCanary) {
+		return reading{}, false, nil
+	}
+	if err != nil {
+		return reading{}, false, fmt.Errorf("gate: read the Canary of %s: %w", q.Process, err)
+	}
+	if read.canary.Revision != q.Revision {
+		return reading{}, false, nil
+	}
+	// A Canary of another Application is not this question's, whatever the caller says.
+	if read.canary.Application != q.Application {
+		return reading{}, false, errNotAMember
+	}
 	raw, err := g.cluster.Inputs(ctx, q.Namespace, q.Application)
 	if err != nil {
 		return reading{}, false, fmt.Errorf("gate: read the release-gate inputs: %w", err)
@@ -134,21 +175,13 @@ func (g *Gate) ask(ctx context.Context, q Question) (read reading, current bool,
 	if err := json.Unmarshal([]byte(raw), &read.gate); err != nil {
 		return reading{}, false, fmt.Errorf("gate: the release-gate inputs do not parse: %w", err)
 	}
-	member := false
 	for _, m := range read.gate.Members {
-		member = member || m.Process == q.Process
+		if m.Process == q.Process {
+			g.noteAsked(q)
+			return read, true, nil
+		}
 	}
-	if !member {
-		return reading{}, false, errNotAMember
-	}
-	if read.canary, err = g.cluster.Canary(ctx, q.Namespace, q.Process); err != nil {
-		return reading{}, false, fmt.Errorf("gate: read the Canary of %s: %w", q.Process, err)
-	}
-	// A Canary of another Application is not this question's, whatever the caller says.
-	if read.canary.Application != q.Application {
-		return reading{}, false, errNotAMember
-	}
-	return read, read.canary.Revision == q.Revision, nil
+	return reading{}, false, errNotAMember
 }
 
 // tag is the part of an Application revision its release Jobs are named by.
@@ -322,6 +355,11 @@ func (g *Gate) holds(ctx context.Context, q Question, process string) (string, e
 	case canary.Revision != q.Revision:
 		return stale(process).Why, nil
 	case through(canary):
+		// Flagger's status carries no revision: a member seen waiting may be waiting from the
+		// release before. One that has asked at this revision is being switched at it.
+		if !g.askedHere(q.Namespace, process, q.Revision) {
+			return process + " has not asked at this revision yet", nil
+		}
 		return "", nil
 	case !settled(canary):
 		return fmt.Sprintf("%s has not passed its analysis (%s)", process, canary.Phase), nil

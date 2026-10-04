@@ -192,6 +192,11 @@ func TestAMemberServesItsRenderWhenItsPrimaryRunsWhatItsDeploymentHolds(t *testi
 			{Name: "settings", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configMap}}}},
 			{Name: "key", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secret}}},
 			{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			{Name: "both", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{
+				{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: configMap}}},
+				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: secret}}},
+				{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Path: "token"}},
+			}}}},
 		}
 	}
 	// What the render holds for the member, and Flagger's copy of it: the same, under its own
@@ -233,6 +238,12 @@ func TestAMemberServesItsRenderWhenItsPrimaryRunsWhatItsDeploymentHolds(t *testi
 		"a container more": func(p *corev1.PodSpec) {
 			p.Containers = append(p.Containers, corev1.Container{Name: "sidecar", Image: "s@sha256:dd"})
 		},
+		"another projected ConfigMap": func(p *corev1.PodSpec) { p.Volumes[3].Projected.Sources[0].ConfigMap.Name = "settings-2" },
+		"another projected Secret":    func(p *corev1.PodSpec) { p.Volumes[3].Projected.Sources[1].Secret.Name = "token-2" },
+		// Anything the pod holds counts, not only what it runs.
+		"another port":           func(p *corev1.PodSpec) { p.Containers[0].Ports = []corev1.ContainerPort{{ContainerPort: 9090}} },
+		"another ServiceAccount": func(p *corev1.PodSpec) { p.ServiceAccountName = "someone-else" },
+		"a readiness probe":      func(p *corev1.PodSpec) { p.Containers[0].ReadinessProbe = &corev1.Probe{PeriodSeconds: 5} },
 	}
 	for name, change := range changes {
 		t.Run(name, func(t *testing.T) {
@@ -283,6 +294,15 @@ func TestAClusterThatDoesNotAnswerIsAnError(t *testing.T) {
 	client.PrependReactor("list", "pods", away)
 	k := gate.Kube{Client: client}
 
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gate.Canaries: "CanaryList"})
+	dyn.PrependReactor("get", "canaries", away)
+	// A Canary the gate could not ask for is not a Canary that is not there.
+	if _, err := (gate.Kube{Dynamic: dyn}).Canary(t.Context(), ns, "auth-api"); !errors.Is(err, errAway) || errors.Is(err, gate.ErrNoCanary) {
+		t.Fatalf("canary: %v", err)
+	}
+	if _, err := kube(nil).Canary(t.Context(), ns, "absent"); !errors.Is(err, gate.ErrNoCanary) {
+		t.Fatalf("a Canary that is not there: %v", err)
+	}
 	if _, err := k.Jobs(t.Context(), ns, "auth"); !errors.Is(err, errAway) {
 		t.Fatalf("jobs: %v", err)
 	}

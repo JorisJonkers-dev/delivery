@@ -74,6 +74,8 @@ func TestFlaggersThreeWebhooksAreAnsweredByStatus(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, logged := serve(t, tc.cluster)
+			// The UI is mid-release too, and has asked its own questions at this revision.
+			post(t, srv, gate.PathChecks, flagger("auth-ui", "Progressing"))
 			status, said := post(t, srv, tc.path, flagger("auth-api", tc.phase))
 			if status != tc.status || said != tc.said {
 				t.Fatalf("%s = %d %q", tc.path, status, said)
