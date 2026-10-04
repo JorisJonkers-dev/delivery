@@ -141,14 +141,16 @@ any Application that holds a grant, and the unit hands it the documents as files
 
 - **The render is read whole before Vault is touched.** A directory holding anything that is not
   a document the render writes is refused, and nothing is applied: half a render is not one.
-- **It writes no more than a grant derives.** A role must bind the one ServiceAccount and
-  namespace its name is made of, a Project's own `<project>-system`, to the one policy of that
-  name, with no namespace selector. A policy must grant only on the forms of path a grant
-  derives, each with the capabilities that form carries and no other: a kv document under
+- **It writes no more than a grant derives.** A name has one reading: the Project stands before
+  the first `-system-` and the identity after it. A role must bind exactly that ServiceAccount
+  in exactly that Project's `<project>-system` namespace, to the one policy of that name, with
+  no namespace selector. A policy must grant only on the forms of path the render writes, each
+  with the capabilities that form carries and no other: `read` on a kv document under
   `secret/data/` or `secret/metadata/`, `read` on `database/creds/<role>`, `update` on
   `transit/<sign|verify|encrypt|decrypt>/<key>` and on `transit/keys/<key>/rotate`. No glob, no
   `+`, no template, no `sudo`. So a document that reached the job by another road than the
-  render cannot bind another identity, or grant on Vault's own `sys/` and `auth/`.
+  render cannot bind another identity, or grant on Vault's own `sys/` and `auth/`. A form the
+  render gains is refused until the job's list gains it.
 - **Vault parses what the job checked.** The policy written is the job's own encoding of what it
   read, not the file's bytes, so nothing a second parser would read differently reaches Vault.
 - **It leaves what is already as rendered alone**, and writes the policy before the role, so a

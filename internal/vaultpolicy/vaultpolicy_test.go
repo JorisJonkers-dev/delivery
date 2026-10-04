@@ -238,6 +238,9 @@ func TestADirectoryThatHoldsAnythingButTheRendersDocumentsIsRefusedWhole(t *test
 		"a policy that writes a credential": {
 			"data-system-postgres.policy.json": `{"path":{"database/creds/auth":{"capabilities":["update"]}}}`, "data-system-postgres.role.json": postgresRole,
 		},
+		"a policy that writes a kv document": {
+			"data-system-postgres.policy.json": `{"path":{"secret/data/platform/postgres/exporter":{"capabilities":["read","update"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
 		"a policy that grants nothing on a path": {
 			"data-system-postgres.policy.json": `{"path":{"secret/data/platform/postgres/exporter":{"capabilities":[]}}}`, "data-system-postgres.role.json": postgresRole,
 		},
@@ -248,6 +251,14 @@ func TestADirectoryThatHoldsAnythingButTheRendersDocumentsIsRefusedWhole(t *test
 		"a role followed by another": {"data-system-postgres.policy.json": postgresPolicy, "data-system-postgres.role.json": postgresRole + postgresRole},
 		// A role binds an identity of a Project's namespace, by name alone.
 		"a role outside a Project's namespace": {"default-builder.policy.json": postgresPolicy, "default-builder.role.json": role("builder", "default", "default-builder")},
+		// A name has one reading: the Project stands before the first `-system-`. A namespace
+		// and ServiceAccount that spell the same name another way are another identity.
+		"a role that reads its name another way": {
+			"data-system-api-system-worker.policy.json": postgresPolicy,
+			"data-system-api-system-worker.role.json":   role("worker", "data-system-api-system", "data-system-api-system-worker"),
+		},
+		"a name with no identity": {"data-system-.policy.json": postgresPolicy, "data-system-.role.json": role("", "data-system", "data-system-")},
+		"a name with no Project":  {"-system-postgres.policy.json": postgresPolicy, "-system-postgres.role.json": role("postgres", "-system", "-system-postgres")},
 		"a role with a namespace selector": {
 			"data-system-postgres.policy.json": postgresPolicy,
 			"data-system-postgres.role.json":   `{"bound_service_account_names":["postgres"],"bound_service_account_namespaces":["data-system"],"token_policies":["data-system-postgres"],"bound_service_account_namespace_selector":"{\"matchLabels\":{}}"}`,

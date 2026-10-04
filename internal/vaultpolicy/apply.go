@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 )
 
 // Report is what one run did, by name.
@@ -21,8 +20,8 @@ type Report struct {
 // rendered reports whether a name has the form the render gives one: `<project>-system-<identity>`.
 // It is how the job tells what the render once wrote from the platform's own fixtures.
 func rendered(name string) bool {
-	project, identity, found := strings.Cut(name, namespaceSuffix+"-")
-	return found && project != "" && identity != ""
+	_, _, named := identityOf(name)
+	return named
 }
 
 // Apply writes every document Vault does not already hold as rendered: the policy first, so a

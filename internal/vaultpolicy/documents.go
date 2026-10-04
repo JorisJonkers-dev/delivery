@@ -25,26 +25,40 @@ const (
 	roleSuffix   = ".role.json"
 )
 
-// name is what a document may be called: it becomes a path in Vault's API.
-var name = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`) //nolint:gochecknoglobals // a compiled constant
+// label is one part of a name: a Project, or an identity within it.
+const label = `[a-z0-9]([a-z0-9-]*[a-z0-9])?`
+
+// part is what a Project's name and an identity's may each be.
+var part = regexp.MustCompile(`^` + label + `$`) //nolint:gochecknoglobals // a compiled constant
 
 // namespaceSuffix ends every namespace the render derives, a Project's own
 // (deploy-kit spec/v1/16-dependencies.md#process-identity).
 const namespaceSuffix = "-system"
 
+// identityOf reads a document's name the one way the job reads it: the Project is what stands
+// before the first `-system-`, and the identity is everything after. A name has one reading, so
+// no second namespace and ServiceAccount can spell the name another identity's policy is under.
+func identityOf(name string) (namespace, serviceAccount string, ok bool) {
+	project, identity, found := strings.Cut(name, namespaceSuffix+"-")
+	if !found || !part.MatchString(project) || !part.MatchString(identity) {
+		return "", "", false
+	}
+	return project + namespaceSuffix, identity, true
+}
+
 // segment is one step of a path a grant names: no glob, no `+`, no template, no `..`, not empty.
 const segment = `[A-Za-z0-9_][A-Za-z0-9_.-]*`
 
-// grantable are the forms of path a grant derives (deploy-kit spec/v1/10-project-intent.md#secrets),
-// each with what a grant may do there: a kv document and its metadata, a database credential,
-// a transit operation on one key. A path of any other form, Vault's own `sys/` and `auth/`
+// grantable are the forms of path the render writes for a grant (deploy-kit
+// spec/v1/10-project-intent.md#secrets), each with what it lets a grant do there: read a kv
+// document and its metadata, read a database credential, run a transit operation on one key. A path of any other form, Vault's own `sys/` and `auth/`
 // above all, or a capability the form does not carry, `sudo` above all, is not one the render
 // writes. A form the render gains is refused until this list gains it.
 var grantable = []struct { //nolint:gochecknoglobals // a constant list
 	path         *regexp.Regexp
 	capabilities []string
 }{
-	{regexp.MustCompile(`^secret/(data|metadata)/` + segment + `(/` + segment + `)*$`), []string{"create", "delete", "list", "patch", "read", "update"}},
+	{regexp.MustCompile(`^secret/(data|metadata)/` + segment + `(/` + segment + `)*$`), []string{"read"}},
 	{regexp.MustCompile(`^database/creds/` + segment + `$`), []string{"read"}},
 	{regexp.MustCompile(`^transit/(sign|verify|encrypt|decrypt)/` + segment + `$`), []string{"update"}},
 	{regexp.MustCompile(`^transit/keys/` + segment + `/rotate$`), []string{"update"}},
@@ -160,15 +174,15 @@ func decode(text string, out any) error {
 }
 
 // checked holds a document to the shape the render gives it, so nothing this job writes can be
-// more than a grant derives: the role binds the one ServiceAccount the name is for, in a
-// Project's namespace, to the one policy of that name, and the policy grants only where a grant
-// can and only what a grant may. The policy it returns is the encoding of what it checked.
+// more than a grant derives: the role binds the one ServiceAccount and namespace its name reads
+// as, to the one policy of that name, and the policy grants only where a grant can and only
+// what a grant may. The policy it returns is the encoding of what it checked.
 func checked(identity, policy string, r Role) (Document, error) {
-	if !name.MatchString(identity) {
+	namespace, serviceAccount, named := identityOf(identity)
+	if !named {
 		return Document{}, fmt.Errorf("vaultpolicy: the name %q %w", identity, errNotRendered)
 	}
-	if len(r.ServiceAccounts) != 1 || len(r.Namespaces) != 1 || identity != r.Namespaces[0]+"-"+r.ServiceAccounts[0] ||
-		!strings.HasSuffix(r.Namespaces[0], namespaceSuffix) || r.NamespaceSelector != "" {
+	if !slices.Equal(r.ServiceAccounts, []string{serviceAccount}) || !slices.Equal(r.Namespaces, []string{namespace}) || r.NamespaceSelector != "" {
 		return Document{}, fmt.Errorf("vaultpolicy: the role of %s binds another identity than its name: %w", identity, errNotRendered)
 	}
 	if len(r.Policies) != 1 || r.Policies[0] != identity {
