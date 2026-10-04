@@ -43,7 +43,11 @@ const (
 	flaggerInstance  = "flagger"
 )
 
-// Flagger implements Cluster: every address of every pod of the `flagger` Process.
+// Flagger implements Cluster: every address of every pod of the `flagger` Process that holds its
+// address now. A pod that has ended, or is ending, still lists the address it had, and the
+// cluster hands that address to the next pod: such a pod is not Flagger. Neither is one on the
+// host's network, whose address is every such pod's on its node, nor one that runs as another
+// identity than the Process's own.
 func (k Kube) Flagger(ctx context.Context) ([]string, error) {
 	list, err := k.Client.CoreV1().Pods(flaggerNamespace).List(ctx, metav1.ListOptions{LabelSelector: labelInstance + "=" + flaggerInstance})
 	if err != nil {
@@ -51,6 +55,9 @@ func (k Kube) Flagger(ctx context.Context) ([]string, error) {
 	}
 	var addresses []string
 	for _, pod := range list.Items {
+		if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil || pod.Spec.HostNetwork || pod.Spec.ServiceAccountName != flaggerInstance {
+			continue
+		}
 		for _, ip := range pod.Status.PodIPs {
 			addresses = append(addresses, ip.IP)
 		}

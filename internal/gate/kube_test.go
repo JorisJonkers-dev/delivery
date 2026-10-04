@@ -313,20 +313,35 @@ func TestAClusterThatDoesNotAnswerIsAnError(t *testing.T) {
 }
 
 func TestFlaggerIsThePodsOfTheDeliveryProjectsFlaggerProcess(t *testing.T) {
-	at := func(name, namespace, instance string, ips ...string) *corev1.Pod {
+	at := func(name, namespace, instance string, change func(*corev1.Pod), ips ...string) *corev1.Pod {
 		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{"app.kubernetes.io/instance": instance}}}
+		p.Spec.ServiceAccountName = "flagger"
+		p.Status.Phase = corev1.PodRunning
 		for _, ip := range ips {
 			p.Status.PodIPs = append(p.Status.PodIPs, corev1.PodIP{IP: ip})
 		}
+		if change != nil {
+			change(p)
+		}
 		return p
 	}
+	ending := metav1.Now()
 	k := kube([]runtime.Object{
-		at("flagger-1", "delivery-system", "flagger", "10.42.0.7", "fd00::7"),
-		at("flagger-2", "delivery-system", "flagger", "10.42.1.9"),
-		at("flagger-starting", "delivery-system", "flagger"),
+		at("flagger-1", "delivery-system", "flagger", nil, "10.42.0.7", "fd00::7"),
+		at("flagger-2", "delivery-system", "flagger", nil, "10.42.1.9"),
+		at("flagger-starting", "delivery-system", "flagger", nil),
 		// The gate itself, and a pod that only calls itself Flagger somewhere else.
-		at("release-gate-1", "delivery-system", "release-gate", "10.42.0.8"),
-		at("flagger-1", "auth-system", "flagger", "10.42.3.3"),
+		at("release-gate-1", "delivery-system", "release-gate", nil, "10.42.0.8"),
+		at("flagger-1", "auth-system", "flagger", nil, "10.42.3.3"),
+		// A pod that no longer holds the address it lists: the cluster hands it to the next pod.
+		at("flagger-ended", "delivery-system", "flagger", func(p *corev1.Pod) { p.Status.Phase = corev1.PodSucceeded }, "10.42.0.20"),
+		at("flagger-failed", "delivery-system", "flagger", func(p *corev1.Pod) { p.Status.Phase = corev1.PodFailed }, "10.42.0.21"),
+		at("flagger-pending", "delivery-system", "flagger", func(p *corev1.Pod) { p.Status.Phase = corev1.PodPending }, "10.42.0.22"),
+		at("flagger-ending", "delivery-system", "flagger", func(p *corev1.Pod) { p.DeletionTimestamp = &ending; p.Finalizers = []string{"keep"} }, "10.42.0.23"),
+		// A pod on the host's network has its node's address, as every such pod there does.
+		at("flagger-on-host", "delivery-system", "flagger", func(p *corev1.Pod) { p.Spec.HostNetwork = true }, "192.168.1.10"),
+		// The label alone is not the identity.
+		at("flagger-as-someone", "delivery-system", "flagger", func(p *corev1.Pod) { p.Spec.ServiceAccountName = "default" }, "10.42.0.24"),
 	})
 
 	got, err := k.Flagger(t.Context())

@@ -90,7 +90,9 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   goes to the log, not the reply.
 - **It answers Flagger and nobody else.** Flagger sends no credential a webhook could carry, so
   the gate goes by where the connection comes from: the address of one of the `flagger` Process's
-  pods in `delivery-system`, read from the cluster on each request. Anyone else gets one `403`
+  pods in `delivery-system`, read from the cluster on each request. Only a pod that holds its
+  address now counts: running, not ending, not on the host's network, and under Flagger's own
+  ServiceAccount. Anyone else gets one `403`
   whatever they ask, before anything of the request or the cluster is read. A forwarded-for
   header is not read. The `delivery` project's derived policy says the same at the network:
   Flagger's edge to the gate is the only one declared.
