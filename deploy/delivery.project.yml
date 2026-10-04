@@ -33,6 +33,10 @@ applications:
           memory: 64Mi
           cpu: 10m
         writablePaths: [/tmp]
+        # Flagger asks the Release Gate its three questions. This is the one edge to the gate, so
+        # the gate's derived policy admits Flagger and nobody else.
+        dependsOn:
+          - { application: release-gate, surface: http }
         probes:
           readiness: { path: /healthz, port: 8080 }
           liveness: { path: /healthz, port: 8080 }

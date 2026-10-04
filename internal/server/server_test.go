@@ -13,7 +13,9 @@ import (
 )
 
 func newServer() *server.Server {
-	return server.New(slog.New(slog.DiscardHandler), "test")
+	return server.New(slog.New(slog.DiscardHandler), "test", func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /own", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	})
 }
 
 func listen(t *testing.T) net.Listener {
@@ -35,6 +37,8 @@ func TestProbesBeforeServing(t *testing.T) {
 		{"/healthz", http.StatusOK},
 		{"/readyz", http.StatusServiceUnavailable},
 		{"/nope", http.StatusNotFound},
+		// The service's own routes sit on the same mux as the probes.
+		{"/own", http.StatusTeapot},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
