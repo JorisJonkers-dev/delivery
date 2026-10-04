@@ -19,7 +19,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/gate/` | The gate's three answers, the webhooks that carry them, and how it reads the cluster |
 | `deploy/release-gate/rbac.yaml` | Everything the Release Gate may do in the cluster: read five kinds |
 | `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, the service's own routes, graceful shutdown |
-| `cmd/collector/` | The ClusterState Collector binary: runs once and exits |
+| `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
 | `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
 | `internal/githubapp/` | One file of one repository, read and written as a GitHub App installation |
 | `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list three kinds |
@@ -168,8 +168,10 @@ prefix, will need the glob this job refuses today.
 
 ## The Collector
 
-Each run lists PersistentVolumes, PersistentVolumeClaims and the pods deploy-kit renders, and
-compares what they say with `cluster-state.yml` in the Estate repository
+The Collector captures when it starts and then once every `INTERVAL`, and keeps running: Project
+Intent has no schedule, so it keeps its own. Each capture lists PersistentVolumes,
+PersistentVolumeClaims and the pods deploy-kit renders, and compares what they say with
+`cluster-state.yml` in the Estate repository
 ([deploy-kit `spec/v1/20-resolved-deployment.md`](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/20-resolved-deployment.md#the-collector)):
 
 | fact | read from |
@@ -177,8 +179,8 @@ compares what they say with `cluster-state.yml` in the Estate repository
 | a binding, `{claim, node}` | a bound claim's name, and the one node its volume's node affinity names under `kubernetes.io/hostname`. A volume any node can mount binds its claim to nothing |
 | a placement, `{process, node}` | a pod labelled `app.kubernetes.io/managed-by: deploy-kit`: its `app.kubernetes.io/name` and the node it is scheduled to. A pod that has finished is not a placement |
 
-Facts are ordered and free of duplicates. When they equal the committed snapshot's, the run
-commits nothing, and `capturedAt` stays what it was. When they differ, the run writes the file
+Facts are ordered and free of duplicates. When they equal the committed snapshot's, the capture
+commits nothing, and `capturedAt` stays what it was. When they differ, it writes the file
 once, through the Collector's GitHub App, replacing exactly the blob it read. A snapshot that
 names another cluster, or that deploy-kit's schema would refuse, is never overwritten.
 
@@ -187,12 +189,19 @@ names another cluster, or that deploy-kit's schema would refuse, is never overwr
 | `CLUSTER_NAME` | the cluster, as the snapshot names it |
 | `ESTATE_REPOSITORY` | `JorisJonkers-dev/estate` |
 | `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID` | the Collector's App and its installation on the Estate repository |
-| `GITHUB_APP_PRIVATE_KEY_FILE` | where the Secret Store projects the App's private key |
+| `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_FILE` | the App's private key, as the Secret Store delivers it: a variable, or a file |
+| `INTERVAL` | how often to capture, a Go duration; ten minutes when it is not set |
+| `ADDR` | where it serves its probes; `:8080` when it is not set |
 
-**Not deployed yet.** The spec makes the Collector a `CronJob` of this project, and Project Intent
-has no schedule and no cluster-wide read to declare one with, so it is not in
-`deploy/delivery.project.yml`. `deploy/collector/rbac.yaml` is the grant the envtest case proves;
-the `CronJob` around it waits for that decision in deploy-kit.
+A capture that fails is logged, and the next one still runs. Because a capture commits only when
+a fact changed, a Collector that stopped and a cluster that stayed still look the same in the
+Estate repository. `GET /fresh` tells them apart: it answers 200 while a capture succeeded within
+twice the interval and 503 after, and it is the Collector's liveness probe, so one that stopped
+succeeding is restarted and shows as restarts.
+
+**Not deployed yet.** The Collector reads three kinds cluster-wide, and Project Intent has no
+cluster-wide read to declare yet (JorisJonkers-dev/deploy-kit#202), so it is not in
+`deploy/delivery.project.yml`. `deploy/collector/rbac.yaml` is the grant the envtest case proves.
 
 ## Run it
 
