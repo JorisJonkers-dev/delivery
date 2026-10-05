@@ -4,12 +4,12 @@ version: "3"
 vars:
   # Every command this repository builds; each is its own image, built with --build-arg APP=<name>.
   APPS: release-gate collector vault-policy
-  # The Kubernetes control plane the Collector's envtest case runs against.
+  # The Kubernetes control plane the envtest cases run against: the Collector's and the Release Gate's.
   ENVTEST_KUBERNETES: 1.36.2
   COVERAGE_MIN: 80
   # The deploy-kit release the vendored schemas come from, by the commit its tag names: a tag can
   # be moved, and a commit cannot. Move both, then `task schemas:sync gen`.
-  DEPLOY_KIT_REF: 305916dd51f2c5e020e13b11a77af53f709d0b75 # v0.4.0
+  DEPLOY_KIT_REF: 4cfbdd9b418a7e902407b40921c14a7853b1268b # main after JorisJonkers-dev/deploy-kit#263; no release carries it yet
   SCHEMAS: resolved-deployment composition-lock pin-annotations cluster-state-snapshot
   VENDOR: third_party/deploy-kit
 
@@ -67,7 +67,7 @@ tasks:
   test:
     desc: Go tests with the race detector and a {{.COVERAGE_MIN}}% statement coverage gate on hand-written code
     cmds:
-      # The Collector's envtest case starts a real API server; setup-envtest fetches it once.
+      # The envtest cases start a real API server; setup-envtest fetches it once.
       - KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{.ENVTEST_KUBERNETES}} -p path)" go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
       # Generated code is held by the corpus test and gen:check, and the fake GitHub is a test
       # double: neither is what the coverage figure is about.

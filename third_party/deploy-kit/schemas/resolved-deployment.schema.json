@@ -331,6 +331,9 @@
           "items": {
             "$ref": "#/$defs/GateMember"
           }
+        },
+        "migration": {
+          "$ref": "#/$defs/GateMigration"
         }
       },
       "required": [
@@ -436,10 +439,10 @@
         "latency"
       ]
     },
-    "ResolvedMigration": {
+    "GateMigration": {
       "type": "object",
       "properties": {
-        "runner": {
+        "identity": {
           "type": "string",
           "minLength": 1
         },
@@ -452,10 +455,200 @@
         }
       },
       "required": [
-        "runner",
+        "identity",
         "nonTransactional"
       ],
       "additionalProperties": false
+    },
+    "ResolvedMigration": {
+      "type": "object",
+      "properties": {
+        "runner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "testedAgainst": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+:[a-f0-9]+$"
+        },
+        "nonTransactional": {
+          "type": "boolean"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deadline": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scratch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database": {
+          "$ref": "#/$defs/MigratedDatabase"
+        },
+        "credential": {
+          "$ref": "#/$defs/ResolvedEngineGrant"
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EgressPeer"
+          }
+        }
+      },
+      "required": [
+        "runner",
+        "uid",
+        "gid",
+        "nonTransactional",
+        "identity",
+        "deadline",
+        "memory",
+        "cpu",
+        "scratch",
+        "database",
+        "credential",
+        "egress"
+      ],
+      "additionalProperties": false
+    },
+    "MigratedDatabase": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedEngineGrant": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "transit",
+            "database"
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "const": "self"
+        },
+        "paths": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyPath"
+          }
+        },
+        "restartTargets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "engine",
+        "delivery",
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "PolicyPath": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allows": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "path",
+        "allows"
+      ],
+      "additionalProperties": false
+    },
+    "EgressPeer": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/EgressRule"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "rule",
+        "namespace",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "EgressRule": {
+      "type": "string",
+      "enum": [
+        "cluster-dns",
+        "secret-store",
+        "datastore"
+      ]
     },
     "ResolvedExposure": {
       "type": "object",
@@ -1301,99 +1494,6 @@
         "self"
       ]
     },
-    "EgressPeer": {
-      "type": "object",
-      "properties": {
-        "rule": {
-          "$ref": "#/$defs/EgressRule"
-        },
-        "namespace": {
-          "type": "string",
-          "minLength": 1
-        },
-        "process": {
-          "type": "string",
-          "minLength": 1
-        },
-        "port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        }
-      },
-      "required": [
-        "rule",
-        "namespace",
-        "port"
-      ],
-      "additionalProperties": false
-    },
-    "EgressRule": {
-      "type": "string",
-      "enum": [
-        "cluster-dns",
-        "secret-store",
-        "datastore"
-      ]
-    },
-    "ResolvedEngineGrant": {
-      "type": "object",
-      "properties": {
-        "engine": {
-          "type": "string",
-          "enum": [
-            "transit",
-            "database"
-          ]
-        },
-        "delivery": {
-          "type": "string",
-          "const": "self"
-        },
-        "paths": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PolicyPath"
-          }
-        },
-        "restartTargets": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [
-        "engine",
-        "delivery",
-        "paths"
-      ],
-      "additionalProperties": false
-    },
-    "PolicyPath": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "allows": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [
-        "path",
-        "allows"
-      ],
-      "additionalProperties": false
-    },
     "ResolvedAsset": {
       "type": "object",
       "properties": {
@@ -1629,7 +1729,8 @@
         "tier-proxy",
         "metrics-stack",
         "consumer",
-        "backup"
+        "backup",
+        "migration"
       ]
     },
     "ResolvedPolicyJob": {

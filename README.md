@@ -7,7 +7,7 @@ Go, and the `delivery` project that deploys them. Generated from
 
 | Service | State |
 |---------|-------|
-| Release Gate: answers Flagger's webhooks and fails closed | answers all three, see [The Release Gate](#the-release-gate); not deployed yet. Migrations, the Down and held reporting are JorisJonkers-dev/delivery#3 |
+| Release Gate: answers Flagger's webhooks and fails closed | answers all three, starts and undoes migrations, and logs held releases, see [The Release Gate](#the-release-gate); not deployed yet |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
 
@@ -16,8 +16,8 @@ Go, and the `delivery` project that deploys them. Generated from
 | Path | What it is |
 |------|------------|
 | `cmd/release-gate/` | The Release Gate binary: reads `ADDR` (default `:8080`) and the cluster it runs in, logs JSON with `slog`, drains on `SIGTERM` |
-| `internal/gate/` | The gate's three answers, the webhooks that carry them, and how it reads the cluster |
-| `deploy/release-gate/rbac.yaml` | Everything the Release Gate may do in the cluster: read five kinds |
+| `internal/gate/` | The gate's three answers, the webhooks that carry them, what it does between questions (`tend.go`), and how it reads the cluster |
+| `deploy/release-gate/rbac.yaml` | Everything the Release Gate may do in the cluster: read five kinds, write ConfigMaps for its release record, and patch a Job to start it |
 | `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, the service's own routes, graceful shutdown |
 | `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
 | `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
@@ -81,6 +81,9 @@ Flagger reads a 2xx as yes and anything else as no, so the status is the answer:
 not yet, with what it waits on, `400` a payload that asks nothing, `403` a caller that is not
 Flagger, `503` a question the gate could not answer. Flagger records a refusal's words on the Canary.
 
+- **A migration the inputs name is a step from the start.** Where the inputs carry a
+  `migration`, `may-start` waits for its Job of this revision whether or not that Job is applied
+  yet.
 - **It decides from the cluster.** Every answer is read when it is asked: the Application's
   `<application>-release-gate` ConfigMap, its Jobs, its members' Canaries and Deployments, the
   new copy's pods.
@@ -106,9 +109,9 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
 - **A release's steps are read off its Jobs.** The inputs do not name them, so every identity
   that has ever run a release Job of the Application is a step, and its Job of this revision must
   be there and complete. A Job that is not applied yet is a step not done, never a step the
-  release lacks. The Job that undoes a migration is no step. An Application's very first
-  migration is the one case this cannot see before its Job exists
-  (JorisJonkers-dev/deploy-kit#240).
+  release lacks. The Job that undoes a migration is no step. The inputs name the migration, so
+  a first migration is a step before its Job exists; a first prepare Process is still the one
+  case this cannot see (JorisJonkers-dev/deploy-kit#240).
 - **The barrier is read off the cluster, not taken on trust.** A member has passed when its
   Canary waits for promotion or is past it. A member "did not change" when Flagger records it as
   serving what it last saw and its primary runs what its Deployment holds: the same images,
@@ -119,13 +122,63 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   before it is promoted, so its own request metrics hold only probes. Until a traffic source and
   a metric source are decided (JorisJonkers-dev/delivery#12), a member that carries those checks
   is held to the same two facts as one that does not.
-- **It does not start anything.** Unsuspending the migration and the prepare Jobs is
-  JorisJonkers-dev/delivery#3; until then an Application with a migration waits at `may-start`.
+- **It starts no prepare Process yet.** deploy-kit renders none, so there is no Job to start.
 
-Its grant is `get` on ConfigMaps, Canaries and Deployments, and `list` on Jobs and pods. The
-`api` block of its Process in `deploy/delivery.project.yml` declares it, and deploy-kit renders
-the ClusterRole, its binding and the token from that.
-[`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml) is the same grant as objects.
+### Between questions
+
+Once a release has failed, Flagger asks nothing more. So every 15 seconds the gate looks at every
+gated Application itself (`internal/gate/tend.go`): each ConfigMap the render wrote under the name
+`<application>-release-gate`, in whatever namespace.
+
+- **It records what an Application serves.** When Flagger records every member as settled and
+  every primary runs what its Deployment holds, the Application serves the revision its Canaries
+  carry. The gate writes that to `<namespace>.<application>-release-record`, a ConfigMap of its
+  own in `delivery-system`, with the Application's namespace and Flagger's digest of each primary. It
+  keeps the record in its own namespace because anything that can write a ConfigMap beside the
+  Application could otherwise say which revision serves; a record naming another namespace is
+  one it cannot answer from. No rendered object says what
+  serves once a new render is applied, so this is the gate's one piece of state, and it survives
+  a restart. When it first sees a revision applied and not yet serving, it notes that and when.
+- **It starts a migration only while its proof holds.** The up Job, `<identity>-<tag>`, is
+  unsuspended when the record's serving revision is the inputs' `testedAgainst` and no primary's
+  digest has moved since. A release proven against nothing starts only where nothing is recorded
+  as serving. Otherwise the release is held with the schema untouched.
+- **It undoes a migration only under every condition of the Down.** The down Job,
+  `<identity>-down-<tag>`, is unsuspended when the release is held, the migration ran, every
+  member's new copy has no pod left, every primary still runs the proven revision, and
+  `nonTransactional` is false. A first release has no down. Where a condition fails, or the Down
+  itself failed, nothing is undone and the gate says which.
+- **A release is held** when its proof is stale, its migration failed, or Flagger failed a
+  member after the gate first saw the revision. Flagger's status carries no revision, so a
+  failure from before that is the release before's.
+- **A round it cannot finish for one Application does not stop the next**, and that Application
+  is reported as unanswerable.
+
+Each round says in the log, as JSON, every held release (`release held`: serving, pinned and the
+reason, `stale-proof`, `migration-failed` or `analysis-failed`), every migration it leaves
+applied (`migration not undone`: the tag the Down would return to and the condition,
+`first-release`, `new-copy-running`, `primaries-moved`, `non-transactional` or `down-failed`),
+and every Application it could not read.
+
+Not here yet: a release that outlives the gate deadline is not reported as held, because nothing
+says when that deadline starts (JorisJonkers-dev/deploy-kit#264); and there is no `/metrics` for
+alert rules to read. A scrape endpoint names namespaces, Applications and revisions, so it waits
+until JorisJonkers-dev/delivery#22 decides who may read it and how the gate admits them, the way
+the webhooks admit Flagger alone.
+
+Its grant is `get` on Canaries and Deployments, `list` on pods, `list` and `patch` on Jobs, and
+`get`, `list`, `create` and `update` on ConfigMaps. A ClusterRole cannot say "only the record"
+or "only `suspend`", so the grant is wider than what the gate does with it
+(JorisJonkers-dev/delivery#21): it writes one ConfigMap per Application in its own namespace,
+named `<namespace>.<application>-release-record`, and `suspend` on a Job it starts. It starts only a Job the
+render wrote (`app.kubernetes.io/managed-by: deploy-kit`) under the Application's own migration
+identity, `<application>-migration`. A start names the version of the Job the gate read, so a Job put in its
+place since is not the one started. A record is named for the namespace as well as the Application,
+so inputs under one Application id elsewhere can neither claim it first nor write over it: they
+are tended as their own namespace's, and silence nothing of this one. The `api` block of its Process in `deploy/delivery.project.yml` declares the grant, and
+deploy-kit renders the ClusterRole, its binding and the token from that.
+[`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml) is the same grant as objects,
+and `internal/gate/envtest_test.go` runs the gate under exactly that grant.
 
 ## The Vault policy job
 

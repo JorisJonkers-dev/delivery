@@ -825,6 +825,46 @@ func (j *GateMember) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type GateMigration struct {
+	// Identity corresponds to the JSON schema field "identity".
+	Identity string `json:"identity"`
+
+	// NonTransactional corresponds to the JSON schema field "nonTransactional".
+	NonTransactional bool `json:"nonTransactional"`
+
+	// TestedAgainst corresponds to the JSON schema field "testedAgainst".
+	TestedAgainst *string `json:"testedAgainst,omitempty,omitzero"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GateMigration) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["identity"]; raw != nil && !ok {
+		return fmt.Errorf("field identity in GateMigration: required")
+	}
+	if _, ok := raw["nonTransactional"]; raw != nil && !ok {
+		return fmt.Errorf("field nonTransactional in GateMigration: required")
+	}
+	type Plain GateMigration
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Identity)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "identity", 1)
+	}
+	if plain.TestedAgainst != nil {
+		if matched, _ := regexp.MatchString(`^[a-z0-9]+:[a-f0-9]+$`, string(*plain.TestedAgainst)); !matched {
+			return fmt.Errorf("field %s pattern match: must match %s", "TestedAgainst", `^[a-z0-9]+:[a-f0-9]+$`)
+		}
+	}
+	*j = GateMigration(plain)
+	return nil
+}
+
 type HardeningClass string
 
 const HardeningClassRestricted HardeningClass = "restricted"
@@ -911,6 +951,7 @@ type IngressRule string
 const IngressRuleBackup IngressRule = "backup"
 const IngressRuleConsumer IngressRule = "consumer"
 const IngressRuleMetricsStack IngressRule = "metrics-stack"
+const IngressRuleMigration IngressRule = "migration"
 const IngressRuleTierProxy IngressRule = "tier-proxy"
 
 var enumValues_IngressRule = []interface{}{
@@ -918,6 +959,7 @@ var enumValues_IngressRule = []interface{}{
 	"metrics-stack",
 	"consumer",
 	"backup",
+	"migration",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1140,6 +1182,53 @@ func (j *MiddlewareStep) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s length: must be >= %d", "redirectTo", 1)
 	}
 	*j = MiddlewareStep(plain)
+	return nil
+}
+
+type MigratedDatabase struct {
+	// Host corresponds to the JSON schema field "host".
+	Host string `json:"host"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port int `json:"port"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *MigratedDatabase) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["host"]; raw != nil && !ok {
+		return fmt.Errorf("field host in MigratedDatabase: required")
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in MigratedDatabase: required")
+	}
+	if _, ok := raw["port"]; raw != nil && !ok {
+		return fmt.Errorf("field port in MigratedDatabase: required")
+	}
+	type Plain MigratedDatabase
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Host)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "host", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	if 65535 < plain.Port {
+		return fmt.Errorf("field %s: must be <= %v", "port", 65535)
+	}
+	if 1 > plain.Port {
+		return fmt.Errorf("field %s: must be >= %v", "port", 1)
+	}
+	*j = MigratedDatabase(plain)
 	return nil
 }
 
@@ -1417,6 +1506,9 @@ type ReleaseGate struct {
 
 	// Members corresponds to the JSON schema field "members".
 	Members []GateMember `json:"members"`
+
+	// Migration corresponds to the JSON schema field "migration".
+	Migration *GateMigration `json:"migration,omitempty,omitzero"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -2055,14 +2147,44 @@ func (j *ResolvedHTTPProbe) UnmarshalJSON(value []byte) error {
 }
 
 type ResolvedMigration struct {
+	// Cpu corresponds to the JSON schema field "cpu".
+	Cpu string `json:"cpu"`
+
+	// Credential corresponds to the JSON schema field "credential".
+	Credential ResolvedEngineGrant `json:"credential"`
+
+	// Database corresponds to the JSON schema field "database".
+	Database MigratedDatabase `json:"database"`
+
+	// Deadline corresponds to the JSON schema field "deadline".
+	Deadline string `json:"deadline"`
+
+	// Egress corresponds to the JSON schema field "egress".
+	Egress []EgressPeer `json:"egress"`
+
+	// Gid corresponds to the JSON schema field "gid".
+	Gid int `json:"gid"`
+
+	// Identity corresponds to the JSON schema field "identity".
+	Identity string `json:"identity"`
+
+	// Memory corresponds to the JSON schema field "memory".
+	Memory string `json:"memory"`
+
 	// NonTransactional corresponds to the JSON schema field "nonTransactional".
 	NonTransactional bool `json:"nonTransactional"`
 
 	// Runner corresponds to the JSON schema field "runner".
 	Runner string `json:"runner"`
 
+	// Scratch corresponds to the JSON schema field "scratch".
+	Scratch string `json:"scratch"`
+
 	// TestedAgainst corresponds to the JSON schema field "testedAgainst".
 	TestedAgainst *string `json:"testedAgainst,omitempty,omitzero"`
+
+	// Uid corresponds to the JSON schema field "uid".
+	Uid int `json:"uid"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -2071,24 +2193,81 @@ func (j *ResolvedMigration) UnmarshalJSON(value []byte) error {
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
+	if _, ok := raw["cpu"]; raw != nil && !ok {
+		return fmt.Errorf("field cpu in ResolvedMigration: required")
+	}
+	if _, ok := raw["credential"]; raw != nil && !ok {
+		return fmt.Errorf("field credential in ResolvedMigration: required")
+	}
+	if _, ok := raw["database"]; raw != nil && !ok {
+		return fmt.Errorf("field database in ResolvedMigration: required")
+	}
+	if _, ok := raw["deadline"]; raw != nil && !ok {
+		return fmt.Errorf("field deadline in ResolvedMigration: required")
+	}
+	if _, ok := raw["egress"]; raw != nil && !ok {
+		return fmt.Errorf("field egress in ResolvedMigration: required")
+	}
+	if _, ok := raw["gid"]; raw != nil && !ok {
+		return fmt.Errorf("field gid in ResolvedMigration: required")
+	}
+	if _, ok := raw["identity"]; raw != nil && !ok {
+		return fmt.Errorf("field identity in ResolvedMigration: required")
+	}
+	if _, ok := raw["memory"]; raw != nil && !ok {
+		return fmt.Errorf("field memory in ResolvedMigration: required")
+	}
 	if _, ok := raw["nonTransactional"]; raw != nil && !ok {
 		return fmt.Errorf("field nonTransactional in ResolvedMigration: required")
 	}
 	if _, ok := raw["runner"]; raw != nil && !ok {
 		return fmt.Errorf("field runner in ResolvedMigration: required")
 	}
+	if _, ok := raw["scratch"]; raw != nil && !ok {
+		return fmt.Errorf("field scratch in ResolvedMigration: required")
+	}
+	if _, ok := raw["uid"]; raw != nil && !ok {
+		return fmt.Errorf("field uid in ResolvedMigration: required")
+	}
 	type Plain ResolvedMigration
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
 	}
+	if utf8.RuneCountInString(string(plain.Cpu)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "cpu", 1)
+	}
+	if matched, _ := regexp.MatchString(`^\d+(ms|s|m|h)$`, string(plain.Deadline)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "Deadline", `^\d+(ms|s|m|h)$`)
+	}
+	if 9007199254740991 < plain.Gid {
+		return fmt.Errorf("field %s: must be <= %v", "gid", 9007199254740991)
+	}
+	if 0 > plain.Gid {
+		return fmt.Errorf("field %s: must be >= %v", "gid", 0)
+	}
+	if utf8.RuneCountInString(string(plain.Identity)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "identity", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
+	}
 	if utf8.RuneCountInString(string(plain.Runner)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "runner", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Scratch)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "scratch", 1)
 	}
 	if plain.TestedAgainst != nil {
 		if matched, _ := regexp.MatchString(`^[a-z0-9]+:[a-f0-9]+$`, string(*plain.TestedAgainst)); !matched {
 			return fmt.Errorf("field %s pattern match: must match %s", "TestedAgainst", `^[a-z0-9]+:[a-f0-9]+$`)
 		}
+	}
+	if 9007199254740991 < plain.Uid {
+		return fmt.Errorf("field %s: must be <= %v", "uid", 9007199254740991)
+	}
+	if 0 > plain.Uid {
+		return fmt.Errorf("field %s: must be >= %v", "uid", 0)
 	}
 	*j = ResolvedMigration(plain)
 	return nil
@@ -3223,6 +3402,32 @@ const SwitchoverBlueGreen Switchover = "blue-green"
 const SwitchoverRolling Switchover = "rolling"
 const SwitchoverStopStart Switchover = "stop-start"
 
+var enumValues_Switchover = []interface{}{
+	"blue-green",
+	"rolling",
+	"stop-start",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Switchover) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_Switchover {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_Switchover, v)
+	}
+	*j = Switchover(v)
+	return nil
+}
+
 type WritablePath struct {
 	// Path corresponds to the JSON schema field "path".
 	Path string `json:"path"`
@@ -3261,32 +3466,6 @@ func (j *WritablePath) UnmarshalJSON(value []byte) error {
 type ResolvedProcessSecretsElem_1 = ResolvedEngineGrant
 
 type ResolvedProcessSecretsElem_0 = ResolvedGrant
-
-var enumValues_Switchover = []interface{}{
-	"blue-green",
-	"rolling",
-	"stop-start",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *Switchover) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_Switchover {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_Switchover, v)
-	}
-	*j = Switchover(v)
-	return nil
-}
 
 type TierProxy struct {
 	// Application corresponds to the JSON schema field "application".

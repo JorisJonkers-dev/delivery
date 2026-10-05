@@ -28,7 +28,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [configmaps]
-    verbs: [get]
+    verbs: [get, list, create, update]
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]
@@ -37,7 +37,7 @@ rules:
     verbs: [get]
   - apiGroups: [batch]
     resources: [jobs]
-    verbs: [list]
+    verbs: [list, patch]
   - apiGroups: [flagger.app]
     resources: [canaries]
     verbs: [get]

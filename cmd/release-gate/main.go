@@ -1,6 +1,9 @@
 // Command release-gate answers Flagger's webhooks: whether a member's new version may start,
-// whether it passes an analysis iteration, and whether it may be promoted. It reads the cluster
-// it runs in and nothing else, serves liveness and readiness probes, and drains on SIGTERM.
+// whether it passes an analysis iteration, and whether it may be promoted. Between questions it
+// tends every gated Application on its own clock: it records what each serves, starts a
+// migration whose proof holds, undoes one only under every condition of the Down, and logs which
+// releases are held. It reads the cluster it runs in and nothing else, serves
+// liveness and readiness probes, and drains on SIGTERM.
 //
 // Environment: ADDR (default :8080).
 package main
@@ -15,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -28,6 +32,10 @@ import (
 var version = "dev"
 
 const defaultAddr = ":8080"
+
+// tendEvery is how often the gate looks at every gated Application without being asked: twice
+// within the shortest analysis interval the platform runs, so a held release is seen promptly.
+const tendEvery = 15 * time.Second
 
 func main() {
 	os.Exit(run())
@@ -63,7 +71,11 @@ func start(parent context.Context, logger *slog.Logger, getenv func(string) stri
 		logger.Error("release-gate could not listen", "error", err)
 		return 1
 	}
-	routes := func(mux *http.ServeMux) { gate.New(cluster).Routes(mux, logger) }
+	releases := gate.New(cluster)
+	ticker := time.NewTicker(tendEvery)
+	defer ticker.Stop()
+	go releases.Run(ctx, ticker.C, logger)
+	routes := func(mux *http.ServeMux) { releases.Routes(mux, logger) }
 	if err := server.New(logger, version, routes).Serve(ctx, ln); err != nil {
 		logger.Error("release-gate stopped", "error", err)
 		return 1
