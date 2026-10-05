@@ -10,11 +10,15 @@
 // one of Flagger's pods (http.go). And it answers a question only at the revision the asking
 // member's Canary carries, so a question about a render that has been replaced is refused.
 //
-// The one thing it remembers is which revision each member last asked at. Flagger's status
+// In memory it remembers one thing: which revision each member last asked at. Flagger's status
 // carries no revision, so a member "waiting for promotion" could be waiting from the release
 // before; a member that has asked at this revision is one Flagger is switching at it. The
 // memory only ever withholds a yes: a gate that restarts has none, and the barrier opens again
 // as each waiting member asks, which it does on every tick.
+//
+// Between questions it tends every gated Application on its own clock (tend.go): it records
+// what each serves in a ConfigMap of its own, starts a migration whose proof holds, undoes one
+// only under every condition of the Down, and says in its log which releases are held.
 package gate
 
 import (
@@ -26,6 +30,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/JorisJonkers-dev/delivery/internal/deploykit/resolved"
 )
@@ -67,6 +72,10 @@ type Job struct {
 	Component string
 	Complete  bool
 	Failed    bool
+	// Suspended is whether the Job still waits to be started: the render applies it so.
+	Suspended bool
+	// Version is the version of the Job as read, which starting it is conditional on.
+	Version string
 }
 
 // Canary is what Flagger records of one member.
@@ -82,6 +91,8 @@ type Canary struct {
 	Promoted string
 	// Iterations is how many analysis iterations Flagger has counted for the member.
 	Iterations int
+	// Transitioned is when Flagger last moved the member to another phase.
+	Transitioned time.Time
 }
 
 // Pod is one pod of a member's new copy.
@@ -108,6 +119,16 @@ type Cluster interface {
 	// pod, but for the names Flagger gives the configuration it copies. It is read off the two
 	// Deployments, not off Flagger's record, which is a tick behind a Deployment that just changed.
 	Serves(ctx context.Context, namespace, process string) (bool, error)
+	// Applications returns every Application that carries release-gate inputs.
+	Applications(ctx context.Context) ([]Gated, error)
+	// Record returns what the gate recorded of the Application, and ErrNoRecord where it has
+	// recorded nothing.
+	Record(ctx context.Context, namespace, application string) (Record, error)
+	// SetRecord writes the Application's record, which only the gate writes.
+	SetRecord(ctx context.Context, namespace, application string, record Record) error
+	// Start unsuspends a release Job, as it was read. It is the one field of a rendered object the
+	// gate writes.
+	Start(ctx context.Context, namespace string, job Job) error
 }
 
 // Gate answers Flagger's three questions.
@@ -117,6 +138,8 @@ type Gate struct {
 	mu sync.Mutex
 	// askedAt is the revision each member last asked a question at, by namespace and Process.
 	askedAt map[string]string
+	// standing is what the last round of tending found.
+	standing Standing
 }
 
 // New returns a Gate reading cluster.
@@ -194,9 +217,9 @@ func tag(revision string) (string, error) {
 	return hex[:tagLength], nil
 }
 
-// down is the suffix of the identity a migration is undone as. The Job that runs as it is
-// rendered beside the migration and is no step of a release.
-const down = "-migration-down"
+// downInfix is what the Job that undoes a migration carries between the migration identity and
+// the revision's tag. It is rendered beside the migration and is no step of a release.
+const downInfix = "-down-"
 
 // MayStart answers whether the member's new version may start: once the Application's migration
 // and every prepare Process of this revision have completed.
@@ -206,7 +229,7 @@ const down = "-migration-down"
 // must be there and complete. A Job that is not applied yet is therefore a step not done, never
 // a step the release does not have.
 func (g *Gate) MayStart(ctx context.Context, q Question) (Answer, error) {
-	_, current, err := g.ask(ctx, q)
+	read, current, err := g.ask(ctx, q)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -222,6 +245,12 @@ func (g *Gate) MayStart(ctx context.Context, q Question) (Answer, error) {
 		return Answer{}, fmt.Errorf("gate: read the release Jobs: %w", err)
 	}
 	steps := stepsOf(jobs, revision)
+	// A migration the inputs name is a step whether or not its Job is applied yet.
+	if migration := read.gate.Migration; migration != nil {
+		if _, known := steps[migration.Identity]; !known {
+			steps[migration.Identity] = nil
+		}
+	}
 	for _, step := range slices.Sorted(maps.Keys(steps)) {
 		job := steps[step]
 		switch {
@@ -244,7 +273,7 @@ func (g *Gate) MayStart(ctx context.Context, q Question) (Answer, error) {
 func stepsOf(jobs []Job, revision string) map[string]*Job {
 	steps := map[string]*Job{}
 	for _, job := range jobs {
-		if job.Component == "" || strings.HasSuffix(job.Component, down) {
+		if job.Component == "" || strings.HasPrefix(job.Name, job.Component+downInfix) {
 			continue
 		}
 		if _, known := steps[job.Component]; !known {
@@ -294,6 +323,7 @@ const (
 	phaseProgressing      = "Progressing"
 	phaseSucceeded        = "Succeeded"
 	phaseInitialized      = "Initialized"
+	phaseFailed           = "Failed"
 )
 
 // through reports whether a member waits at the barrier or is past it.

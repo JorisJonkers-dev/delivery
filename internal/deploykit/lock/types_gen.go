@@ -213,7 +213,7 @@ type Isolation struct {
 	Codes []string `json:"codes"`
 
 	// Refused corresponds to the JSON schema field "refused".
-	Refused string `json:"refused"`
+	Refused *string `json:"refused,omitempty,omitzero"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -225,9 +225,6 @@ func (j *Isolation) UnmarshalJSON(value []byte) error {
 	if _, ok := raw["codes"]; raw != nil && !ok {
 		return fmt.Errorf("field codes in Isolation: required")
 	}
-	if _, ok := raw["refused"]; raw != nil && !ok {
-		return fmt.Errorf("field refused in Isolation: required")
-	}
 	type Plain Isolation
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
@@ -236,8 +233,10 @@ func (j *Isolation) UnmarshalJSON(value []byte) error {
 	if plain.Codes != nil && len(plain.Codes) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "codes", 1)
 	}
-	if matched, _ := regexp.MatchString(`^(?:[^@\s/]+\/)+[^@\s/:]+@sha256:[a-f0-9]{64}$`, string(plain.Refused)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "Refused", `^(?:[^@\s/]+\/)+[^@\s/:]+@sha256:[a-f0-9]{64}$`)
+	if plain.Refused != nil {
+		if matched, _ := regexp.MatchString(`^(?:[^@\s/]+\/)+[^@\s/:]+@sha256:[a-f0-9]{64}$`, string(*plain.Refused)); !matched {
+			return fmt.Errorf("field %s pattern match: must match %s", "Refused", `^(?:[^@\s/]+\/)+[^@\s/:]+@sha256:[a-f0-9]{64}$`)
+		}
 	}
 	*j = Isolation(plain)
 	return nil

@@ -24,6 +24,7 @@ const ns = "auth-system"
 func labels(name, instance string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name": name, "app.kubernetes.io/instance": instance, "app.kubernetes.io/part-of": "auth",
+		"app.kubernetes.io/managed-by": "deploy-kit",
 	}
 }
 
@@ -113,8 +114,10 @@ func TestAJobIsReadWithItsIdentityAndHowItEnded(t *testing.T) {
 	yes, no := corev1.ConditionTrue, corev1.ConditionFalse
 	k := kube([]runtime.Object{
 		job("auth-migration-9d2c4e6a8b0d", "auth-migration", batchv1.JobCondition{Type: batchv1.JobComplete, Status: yes}),
-		job("auth-migration-down-9d2c4e6a8b0d", "auth-migration-down", batchv1.JobCondition{Type: batchv1.JobSuspended, Status: yes}),
+		job("auth-migration-down-9d2c4e6a8b0d", "auth-migration", batchv1.JobCondition{Type: batchv1.JobSuspended, Status: yes}),
 		job("auth-seed-9d2c4e6a8b0d", "auth-seed", batchv1.JobCondition{Type: batchv1.JobFailed, Status: yes}, batchv1.JobCondition{Type: batchv1.JobComplete, Status: no}),
+		// A Job labelled as auth's that the render did not write is no release Job.
+		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "auth-migration-1111aaaa2222", Namespace: ns, Labels: map[string]string{"app.kubernetes.io/part-of": "auth", "app.kubernetes.io/name": "auth-migration"}}},
 		// Another Application's Job in the same namespace is not this one's.
 		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "mail-migration-9d2c4e6a8b0d", Namespace: ns, Labels: map[string]string{"app.kubernetes.io/part-of": "mail"}}},
 	})
@@ -125,7 +128,7 @@ func TestAJobIsReadWithItsIdentityAndHowItEnded(t *testing.T) {
 	}
 	want := map[string]gate.Job{
 		"auth-migration-9d2c4e6a8b0d":      {Name: "auth-migration-9d2c4e6a8b0d", Component: "auth-migration", Complete: true},
-		"auth-migration-down-9d2c4e6a8b0d": {Name: "auth-migration-down-9d2c4e6a8b0d", Component: "auth-migration-down"},
+		"auth-migration-down-9d2c4e6a8b0d": {Name: "auth-migration-down-9d2c4e6a8b0d", Component: "auth-migration"},
 		"auth-seed-9d2c4e6a8b0d":           {Name: "auth-seed-9d2c4e6a8b0d", Component: "auth-seed", Failed: true},
 	}
 	if len(got) != len(want) {

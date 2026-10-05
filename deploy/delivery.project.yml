@@ -92,11 +92,13 @@ applications:
         api:
           reason: >-
             the Release Gate answers Flagger from what the cluster holds, so it reads each gated
-            Application's inputs, Canaries, Deployments, Jobs and pods, and writes nothing
+            Application's inputs, Canaries, Deployments, Jobs and pods; it finds the gated
+            Applications by listing ConfigMaps, keeps each one's release record in a ConfigMap of
+            its own, and unsuspends the migration Jobs it starts
           rules:
             - group: core
               objects: [configmaps]
-              verbs: [get]
+              verbs: [get, list, create, update]
             - group: core
               objects: [pods]
               verbs: [list]
@@ -105,7 +107,7 @@ applications:
               verbs: [get]
             - group: batch
               objects: [jobs]
-              verbs: [list]
+              verbs: [list, patch]
             - group: flagger.app
               objects: [canaries]
               verbs: [get]

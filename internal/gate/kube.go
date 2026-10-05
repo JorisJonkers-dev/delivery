@@ -2,9 +2,11 @@ package gate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
@@ -27,8 +30,10 @@ const (
 // Canaries is where Flagger's Canary objects live.
 var Canaries = schema.GroupVersionResource{Group: "flagger.app", Version: "v1beta1", Resource: "canaries"} //nolint:gochecknoglobals // a constant in all but type
 
-// Kube reads the cluster. It only ever gets and lists: the gate's ServiceAccount may read these
-// five kinds and do nothing else.
+// Kube is the gate's cluster. It gets and lists five kinds, and writes two things: the release
+// record, a ConfigMap of the gate's own in its own namespace, and `suspend` on a release Job of
+// the render's that it starts
+// (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 type Kube struct {
 	Client  kubernetes.Interface
 	Dynamic dynamic.Interface
@@ -80,7 +85,9 @@ func (k Kube) Inputs(ctx context.Context, namespace, application string) (string
 
 // Jobs implements Cluster.
 func (k Kube) Jobs(ctx context.Context, namespace, application string) ([]Job, error) {
-	list, err := k.Client.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelPartOf + "=" + application})
+	// Only a Job the render wrote is a release Job: one anyone else labelled alike is not.
+	selector := labelPartOf + "=" + application + "," + labelManagedBy + "=" + renderedBy
+	list, err := k.Client.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +98,8 @@ func (k Kube) Jobs(ctx context.Context, namespace, application string) ([]Job, e
 			Component: job.Labels[labelName],
 			Complete:  holds(job.Status.Conditions, batchv1.JobComplete),
 			Failed:    holds(job.Status.Conditions, batchv1.JobFailed),
+			Suspended: job.Spec.Suspend != nil && *job.Spec.Suspend,
+			Version:   job.ResourceVersion,
 		})
 	}
 	return jobs, nil
@@ -138,7 +147,120 @@ func (k Kube) Canary(ctx context.Context, namespace, process string) (Canary, er
 	read.Promoted, _, _ = unstructured.NestedString(object.Object, "status", "lastPromotedSpec")
 	iterations, _, _ := unstructured.NestedInt64(object.Object, "status", "iterations")
 	read.Iterations = int(iterations)
+	// A time that does not parse is the zero time: a transition the gate cannot date is one it
+	// cannot place after anything.
+	transitioned, _, _ := unstructured.NestedString(object.Object, "status", "lastTransitionTime")
+	read.Transitioned, _ = time.Parse(time.RFC3339, transitioned)
 	return read, nil
+}
+
+// The render labels every object it writes (deploy-kit spec/v1/10-project-intent.md#the-label-set).
+const (
+	labelManagedBy = "app.kubernetes.io/managed-by"
+	renderedBy     = "deploy-kit"
+	recordedBy     = "release-gate"
+)
+
+// Applications implements Cluster: every ConfigMap the render wrote under the name an
+// Application's release-gate inputs carry, in whatever namespace.
+func (k Kube) Applications(ctx context.Context) ([]Gated, error) {
+	list, err := k.Client.CoreV1().ConfigMaps(metav1.NamespaceAll).List(ctx, metav1.ListOptions{LabelSelector: labelManagedBy + "=" + renderedBy})
+	if err != nil {
+		return nil, err
+	}
+	var gated []Gated
+	for _, cm := range list.Items {
+		application := cm.Labels[labelPartOf]
+		if application != "" && cm.Name == InputsName(application) {
+			gated = append(gated, Gated{Namespace: cm.Namespace, Application: application})
+		}
+	}
+	return gated, nil
+}
+
+// RecordKey is the one key of an Application's release record.
+const RecordKey = "record.json"
+
+// RecordName is the name of an Application's release record: a ConfigMap the gate alone writes,
+// named for the namespace and the Application both. A namespace is a DNS label and holds no
+// dot, so the first dot says where it ends, and inputs put under one Application's id in another
+// namespace name another record: they can neither claim this one first nor write over it.
+func RecordName(namespace, application string) string {
+	return namespace + "." + application + "-release-record"
+}
+
+// RecordNamespace is where every release record lives: the gate's own namespace, which the
+// delivery project derives, so that no Application can write what the gate decides from.
+const RecordNamespace = flaggerNamespace
+
+var errAnotherNamespace = errors.New("gate: the release record names another namespace")
+
+// Record implements Cluster. A record that names another namespace than the one asked about is
+// not this Application's, and the gate cannot answer from it.
+func (k Kube) Record(ctx context.Context, namespace, application string) (Record, error) {
+	cm, err := k.Client.CoreV1().ConfigMaps(RecordNamespace).Get(ctx, RecordName(namespace, application), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return Record{}, ErrNoRecord
+	}
+	if err != nil {
+		return Record{}, err
+	}
+	var record Record
+	if err := json.Unmarshal([]byte(cm.Data[RecordKey]), &record); err != nil {
+		return Record{}, fmt.Errorf("gate: ConfigMap %s/%s does not parse: %w", RecordNamespace, cm.Name, err)
+	}
+	if record.Namespace != namespace {
+		return Record{}, errAnotherNamespace
+	}
+	return record, nil
+}
+
+// SetRecord implements Cluster: the record is created the first time and replaced after.
+func (k Kube) SetRecord(ctx context.Context, namespace, application string, record Record) error {
+	record.Namespace = namespace
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: RecordName(namespace, application), Namespace: RecordNamespace,
+			Labels: map[string]string{labelPartOf: application, labelManagedBy: recordedBy},
+		},
+		Data: map[string]string{RecordKey: string(encoded)},
+	}
+	configMaps := k.Client.CoreV1().ConfigMaps(RecordNamespace)
+	existing, err := configMaps.Get(ctx, cm.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = configMaps.Create(ctx, cm, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// A record is replaced only by one of the namespace it names, and only as read: a ConfigMap
+	// planted under the record's name that names another namespace is not written over.
+	var held Record
+	if err := json.Unmarshal([]byte(existing.Data[RecordKey]), &held); err != nil || held.Namespace != namespace {
+		return errAnotherNamespace
+	}
+	cm.ResourceVersion = existing.ResourceVersion
+	_, err = configMaps.Update(ctx, cm, metav1.UpdateOptions{})
+	return err
+}
+
+// Start implements Cluster. The patch names the version of the Job the gate read, so a Job put
+// in its place since, under the same name, is not the one started.
+func (k Kube) Start(ctx context.Context, namespace string, job Job) error {
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{"resourceVersion": job.Version},
+		"spec":     map[string]any{"suspend": false},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = k.Client.BatchV1().Jobs(namespace).Patch(ctx, job.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	return err
 }
 
 // primarySuffix is what Flagger adds to the name of a member's primary, and to the name of every

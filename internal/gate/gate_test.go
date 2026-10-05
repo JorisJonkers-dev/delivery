@@ -25,8 +25,15 @@ type cluster struct {
 	changed map[string]bool
 	// strangers makes every caller of the test server someone other than Flagger.
 	strangers bool
-	// away names the read that fails, as an unreachable API server would fail it.
+	// away names the read or the write that fails, as an unreachable API server would fail it.
 	away string
+	// record is what the gate has recorded of auth; nil where it has recorded nothing.
+	record *gate.Record
+	// written is every record the gate wrote, and started every Job it unsuspended, in order.
+	written []gate.Record
+	started []string
+	// also is every Application listed beside auth's.
+	also []gate.Gated
 }
 
 var errAway = errors.New("the API server is away")
@@ -80,6 +87,40 @@ func (c *cluster) Serves(_ context.Context, _, process string) (bool, error) {
 		return false, errAway
 	}
 	return !c.changed[process], nil
+}
+
+func (c *cluster) Applications(context.Context) ([]gate.Gated, error) {
+	if c.away == "applications" {
+		return nil, errAway
+	}
+	return append([]gate.Gated{{Namespace: "auth-system", Application: "auth"}}, c.also...), nil
+}
+
+func (c *cluster) Record(context.Context, string, string) (gate.Record, error) {
+	switch {
+	case c.away == "record":
+		return gate.Record{}, errAway
+	case c.record == nil:
+		return gate.Record{}, gate.ErrNoRecord
+	}
+	return *c.record, nil
+}
+
+func (c *cluster) SetRecord(_ context.Context, _, _ string, record gate.Record) error {
+	if c.away == "set-record" {
+		return errAway
+	}
+	c.record = &record
+	c.written = append(c.written, record)
+	return nil
+}
+
+func (c *cluster) Start(_ context.Context, _ string, job gate.Job) error {
+	if c.away == "start" {
+		return errAway
+	}
+	c.started = append(c.started, job.Name)
+	return nil
 }
 
 // of is a Canary of auth at the revision under release.
@@ -141,7 +182,7 @@ func TestAReleaseStartsOnceItsMigrationAndEveryPrepareProcessCompleted(t *testin
 		"the migration failed":                {[]gate.Job{failed(migration)}, false, "auth-migration-9d2c4e6a8b0d failed: the release is held"},
 		// The Job that undoes a migration is rendered suspended beside it and stays so in a release that goes well.
 		"the down Job, never started": {
-			[]gate.Job{done(migration), {Name: "auth-migration-down-9d2c4e6a8b0d", Component: "auth-migration-down"}},
+			[]gate.Job{done(migration), {Name: "auth-migration-down-9d2c4e6a8b0d", Component: "auth-migration"}},
 			true, "the migration and every prepare Process completed",
 		},
 		// An Application that has migrated before migrates in every release: a Job of this revision
@@ -160,7 +201,7 @@ func TestAReleaseStartsOnceItsMigrationAndEveryPrepareProcessCompleted(t *testin
 			false, "auth-migration-9d2c4e6a8b0d is not there yet",
 		},
 		"a Job with no identity, and an earlier down Job": {
-			[]gate.Job{{Name: "stray-9d2c4e6a8b0d"}, {Name: "auth-migration-down-0a1b2c3d4e5f", Component: "auth-migration-down"}},
+			[]gate.Job{{Name: "stray-9d2c4e6a8b0d"}, {Name: "auth-migration-down-0a1b2c3d4e5f", Component: "auth-migration"}},
 			true, "the release has no migration and no prepare Process",
 		},
 		// Steps are checked in name order, so what the answer names does not depend on list order.

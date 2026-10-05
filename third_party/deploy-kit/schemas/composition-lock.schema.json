@@ -197,7 +197,6 @@
         }
       },
       "required": [
-        "refused",
         "codes"
       ],
       "additionalProperties": false

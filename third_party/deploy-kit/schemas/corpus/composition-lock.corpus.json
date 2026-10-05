@@ -115,6 +115,22 @@
           "value": "Lock"
         }
       ]
+    },
+    {
+      "name": "a participant that published nothing, isolated with no fragment to name",
+      "verdict": "accept",
+      "case": "a lock with a released fragment and an isolated Project",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/spec/isolated/absent",
+          "value": {
+            "codes": [
+              "E_PARTICIPANT_MISSING"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
