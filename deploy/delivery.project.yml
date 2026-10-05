@@ -51,15 +51,18 @@ applications:
             - group: flagger.app
               objects: [canaries, canaries/status]
               verbs: [get, list, watch, update, patch]
+            # No `delete` on anything: what Flagger makes it makes as the Canary's own, and the
+            # cluster collects it with the Canary. A verb a running Flagger turns out to need is
+            # added here with the refusal that shows it.
             - group: apps
               objects: [deployments]
-              verbs: [get, list, watch, create, update, patch, delete]
+              verbs: [get, list, watch, create, update, patch]
             - group: autoscaling
               objects: [horizontalpodautoscalers]
-              verbs: [get, list, watch, create, update, patch, delete]
+              verbs: [get, list, watch, create, update, patch]
             - group: core
               objects: [services, configmaps]
-              verbs: [get, list, watch, create, update, patch, delete]
+              verbs: [get, list, watch, create, update, patch]
             # Reading a Secret a pod names is how Flagger learns it is excluded from
             # configuration tracking; it copies none, so it writes none.
             - group: core
