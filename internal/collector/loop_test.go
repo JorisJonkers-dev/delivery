@@ -64,18 +64,26 @@ func TestTheLoopCapturesAtStartAndAtEveryInterval(t *testing.T) {
 
 func TestACollectorIsFreshWhileACaptureSucceededWithinTwiceTheInterval(t *testing.T) {
 	var at clock
-	failing := atomic.Bool{}
 	ticks := make(chan time.Time)
-	ran := make(chan struct{})
-	capture := func(context.Context) (bool, error) {
-		defer func() { ran <- struct{}{} }()
-		if failing.Load() {
-			return false, errors.New("the cluster is away")
+	// Each capture waits to be told how it ends, so the test decides when one finishes.
+	results := make(chan error)
+	capture := func(ctx context.Context) (bool, error) {
+		select {
+		case err := <-results:
+			return err == nil, err
+		case <-ctx.Done():
+			return false, ctx.Err()
 		}
-		return true, nil
 	}
 	loop := collector.NewLoop(capture, time.Minute, at.now, func(time.Duration) <-chan time.Time { return ticks },
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// ends one capture with err and lets the next begin. The loop takes a tick only after it
+	// has recorded how the capture ended, so once the tick is taken the record is written, and
+	// the loop is parked inside the next capture while the test moves the clock.
+	ends := func(err error) {
+		results <- err
+		ticks <- at.now()
+	}
 
 	// A Collector that has only just been made has not failed yet.
 	if !loop.Fresh() {
@@ -92,29 +100,24 @@ func TestACollectorIsFreshWhileACaptureSucceededWithinTwiceTheInterval(t *testin
 		loop.Run(ctx)
 		close(done)
 	}()
-	<-ran
-	// The capture at start succeeded, so the Collector is fresh for twice the interval, to the nanosecond.
-	ticks <- at.now() // the loop is past its capture and waiting, so the mark is written
-	failing.Store(true)
-	<-ran
+
+	// The capture at start succeeds, so the Collector is fresh for twice the interval, to the nanosecond.
+	ends(nil)
 	at.advance(2 * time.Minute)
 	if !loop.Fresh() || fresh(t, loop) != http.StatusOK {
 		t.Fatal("a Collector is stale at exactly twice its interval")
 	}
 	// A capture that fails does not count: the mark stays where the last success left it.
-	ticks <- at.now()
-	<-ran
+	ends(errors.New("the cluster is away"))
 	at.advance(time.Nanosecond)
 	if loop.Fresh() || fresh(t, loop) != http.StatusServiceUnavailable {
 		t.Fatal("a Collector whose captures fail stays fresh")
 	}
 	// And one that succeeds again is fresh again.
-	failing.Store(false)
-	ticks <- at.now()
-	<-ran
-	cancel()
-	<-done
+	ends(nil)
 	if !loop.Fresh() {
 		t.Fatal("a Collector that captured again is stale")
 	}
+	cancel()
+	<-done
 }
