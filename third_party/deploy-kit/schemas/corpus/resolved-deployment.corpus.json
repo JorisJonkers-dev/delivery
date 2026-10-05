@@ -517,6 +517,78 @@
           "path": "/applications/0/processes/0/cutover"
         }
       ]
+    },
+    {
+      "name": "a deployment with a Vault policy job",
+      "verdict": "accept",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/policyJob",
+          "value": {
+            "identity": "vault-policy",
+            "namespace": "secrets-system",
+            "image": "ghcr.io/jorisjonkers-dev/delivery/vault-policy@sha256:c5e7a9b1d3f5c7e9a1b3d5f7c9e1a3b5d7f9c1e3a5b7d9f1c3e5a7b9d1f3c5e7",
+            "uid": 65532,
+            "gid": 65532,
+            "role": "policy-admin",
+            "address": "http://vault.secrets-system.svc.cluster.local:8200",
+            "memory": "64Mi",
+            "cpu": "10m",
+            "deadline": "120s",
+            "egress": [
+              {
+                "rule": "secret-store",
+                "namespace": "secrets-system",
+                "process": "vault",
+                "port": 8200
+              },
+              {
+                "rule": "cluster-dns",
+                "namespace": "kube-system",
+                "port": 53
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "a Vault policy job with no address to write to",
+      "verdict": "refuse",
+      "breaks": "missing-required",
+      "case": "minimal's estate as one Resolved Deployment",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/policyJob",
+          "value": {
+            "identity": "vault-policy",
+            "namespace": "secrets-system",
+            "image": "ghcr.io/jorisjonkers-dev/delivery/vault-policy@sha256:c5e7a9b1d3f5c7e9a1b3d5f7c9e1a3b5d7f9c1e3a5b7d9f1c3e5a7b9d1f3c5e7",
+            "uid": 65532,
+            "gid": 65532,
+            "role": "policy-admin",
+            "memory": "64Mi",
+            "cpu": "10m",
+            "deadline": "120s",
+            "egress": [
+              {
+                "rule": "secret-store",
+                "namespace": "secrets-system",
+                "process": "vault",
+                "port": 8200
+              },
+              {
+                "rule": "cluster-dns",
+                "namespace": "kube-system",
+                "port": 53
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

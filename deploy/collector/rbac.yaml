@@ -3,6 +3,9 @@
 #
 # The envtest case in internal/collector applies this file as it is and proves both halves: the
 # Collector's reads succeed under it, and every other verb and kind it tries is refused.
+#
+# deploy-kit renders the same grant from the `api` block of the collector Process in
+# deploy/delivery.project.yml; internal/declared holds the two to each other.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

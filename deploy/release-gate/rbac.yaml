@@ -12,8 +12,9 @@
 # RBAC cannot name a ConfigMap by a pattern, so `get` on ConfigMaps is every ConfigMap's. The
 # gate asks only for the one named for the Application a Canary's webhook carries.
 #
-# Rendering this grant, and mounting the token it needs, is the delivery project's own render
-# (JorisJonkers-dev/deploy-kit#202). Until then this file is the grant, applied by hand.
+# deploy-kit renders this grant, and mounts the token it needs, from the `api` block of the
+# release-gate Process in deploy/delivery.project.yml. This file is the same grant as objects,
+# for the envtest cases to apply; internal/declared holds the two to each other.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
