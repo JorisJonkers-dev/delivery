@@ -7,8 +7,9 @@ vars:
   # The Kubernetes control plane the Collector's envtest case runs against.
   ENVTEST_KUBERNETES: 1.36.2
   COVERAGE_MIN: 80
-  # The deploy-kit commit the vendored schemas come from. Move it, then `task schemas:sync gen`.
-  DEPLOY_KIT_REF: b9ac258f5ebe52a94e182ebeb23c7ea94af7aa98
+  # The deploy-kit release the vendored schemas come from, by the commit its tag names: a tag can
+  # be moved, and a commit cannot. Move both, then `task schemas:sync gen`.
+  DEPLOY_KIT_REF: 305916dd51f2c5e020e13b11a77af53f709d0b75 # v0.4.0
   SCHEMAS: resolved-deployment composition-lock pin-annotations cluster-state-snapshot
   VENDOR: third_party/deploy-kit
 

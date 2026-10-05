@@ -1,18 +1,23 @@
 # deploy-kit Project Intent for the delivery machinery: the Applications that perform a switch and
-# are never switched by one. The Platform document names both in `delivery.machinery` and the
-# Release Gate in `delivery.gate`, so this file is the one project the platform owns outright
+# are never switched by one, and the ClusterState Collector beside them. The Platform document
+# names Flagger and the Release Gate in `delivery.machinery` and the gate in `delivery.gate`, so
+# this file is the one project the platform owns outright
 # (deploy-kit spec/v1/14-platform-intent.md#delivery-policy). Its examples/delivery is this file's
-# model, but for the Release Gate, which here is the Go binary this repository builds.
+# model.
 #
-# Both answer `continuous`: they keep serving while they cut over. A gate cannot gate its own
-# release and nothing gates Flagger's, so each derives a rolling switchover
+# Flagger and the Release Gate answer `continuous`: they keep serving while they cut over. A gate
+# cannot gate its own release and nothing gates Flagger's, so each derives a rolling switchover
 # (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 #
-# The other two services this repository builds are not declared here. The ClusterState Collector
-# is a long-running Process that reads three kinds cluster-wide, and Project Intent has no
-# cluster-wide read to declare yet (its grant is deploy/collector/rbac.yaml,
-# JorisJonkers-dev/deploy-kit#202); the Vault policy job runs in the platform's apps-vso-secrets
-# Reconcile Unit, not in this project.
+# All three call the Kubernetes API, which no other Process of the estate does. Each declares what
+# it asks and why, in `api`, and the Platform document admits the three by name in
+# `apiAccess.holders`; the render derives each one's ClusterRole, its binding and its token from
+# that (deploy-kit spec/v1/16-dependencies.md#kubernetes-api-access-is-declared-and-admitted).
+# deploy/*/rbac.yaml hold the same rules as objects, for the envtest cases, and a test holds the
+# two to each other.
+#
+# The Vault policy job this repository also builds is not declared here: it is derived, from the
+# Platform document's `policyJob` (deploy-kit spec/v1/14-platform-intent.md#the-vault-policy-job).
 
 apiVersion: intent.jorisjonkers.dev/v1
 kind: Project
@@ -38,6 +43,34 @@ applications:
         # the gate's derived policy admits Flagger and nobody else.
         dependsOn:
           - { application: release-gate, surface: http }
+        api:
+          reason: >-
+            Flagger switches every blue-green Process, so it scales its Deployment, generates its
+            Services and copies, and records the Canary
+          rules:
+            - group: flagger.app
+              objects: [canaries, canaries/status]
+              verbs: [get, list, watch, update, patch]
+            # No `delete` on anything: what Flagger makes it makes as the Canary's own, and the
+            # cluster collects it with the Canary. A verb a running Flagger turns out to need is
+            # added here with the refusal that shows it.
+            - group: apps
+              objects: [deployments]
+              verbs: [get, list, watch, create, update, patch]
+            - group: autoscaling
+              objects: [horizontalpodautoscalers]
+              verbs: [get, list, watch, create, update, patch]
+            - group: core
+              objects: [services, configmaps]
+              verbs: [get, list, watch, create, update, patch]
+            # Reading a Secret a pod names is how Flagger learns it is excluded from
+            # configuration tracking; it copies none, so it writes none.
+            - group: core
+              objects: [secrets]
+              verbs: [get]
+            - group: core
+              objects: [events]
+              verbs: [create, update, patch]
         probes:
           readiness: { path: /healthz, port: 8080 }
           liveness: { path: /healthz, port: 8080 }
@@ -55,8 +88,68 @@ applications:
         placement:
           memory: 64Mi
           cpu: 25m
+        # What deploy/release-gate/rbac.yaml holds as objects: five kinds read, nothing written.
+        api:
+          reason: >-
+            the Release Gate answers Flagger from what the cluster holds, so it reads each gated
+            Application's inputs, Canaries, Deployments, Jobs and pods, and writes nothing
+          rules:
+            - group: core
+              objects: [configmaps]
+              verbs: [get]
+            - group: core
+              objects: [pods]
+              verbs: [list]
+            - group: apps
+              objects: [deployments]
+              verbs: [get]
+            - group: batch
+              objects: [jobs]
+              verbs: [list]
+            - group: flagger.app
+              objects: [canaries]
+              verbs: [get]
         probes:
           readiness: { path: /readyz, port: 8080 }
           liveness: { path: /healthz, port: 8080 }
         startupBudget: 10s
         cutover: continuous
+
+  # The ClusterState Collector: not machinery, since it switches nothing, so it is not in
+  # `delivery.machinery`. It captures on its own interval and holds no state, so stopping it for
+  # a release costs one capture: `interrupted`.
+  - id: collector
+    processes:
+      - name: collector
+        lifecycle: application
+        image: collector # built from this repository's Dockerfile
+        runtime: none
+        provides:
+          http: 8080 # its probes; nothing calls it
+        placement:
+          memory: 64Mi
+          cpu: 10m
+        # What deploy/collector/rbac.yaml holds as objects: three kinds listed, cluster-wide.
+        api:
+          reason: >-
+            the Collector captures where each bound claim and each rendered pod is, so it lists
+            the three kinds that say so, cluster-wide, and writes nothing
+          rules:
+            - group: core
+              objects: [persistentvolumes, persistentvolumeclaims, pods]
+              verbs: [get, list]
+        # Its GitHub App: the one credential that may write cluster-state.yml to the Estate
+        # repository. Delivered as variables, which is the delivery the render spells today.
+        secrets:
+          - path: secret/data/delivery-system/collector
+            keys: [app-id, installation-id, private-key]
+            access: read
+            delivery: env
+            rotation: { tolerates: restart }
+        probes:
+          readiness: { path: /readyz, port: 8080 }
+          # Whether a capture succeeded within twice its interval: a Collector that stopped
+          # succeeding is restarted.
+          liveness: { path: /fresh, port: 8080 }
+        startupBudget: 10s
+        cutover: interrupted

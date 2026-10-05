@@ -36,6 +36,9 @@
           "items": {
             "$ref": "#/$defs/ResolvedApplication"
           }
+        },
+        "policyJob": {
+          "$ref": "#/$defs/ResolvedPolicyJob"
         }
       },
       "required": [
@@ -687,6 +690,9 @@
         "identityToken": {
           "type": "boolean"
         },
+        "api": {
+          "$ref": "#/$defs/ResolvedApiAccess"
+        },
         "readiness": {
           "$ref": "#/$defs/ResolvedProbe"
         },
@@ -873,6 +879,96 @@
       "enum": [
         "restricted"
       ]
+    },
+    "ResolvedApiAccess": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rules": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedApiRule"
+          }
+        },
+        "server": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DestinationRange"
+          }
+        }
+      },
+      "required": [
+        "reason",
+        "rules",
+        "server"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedApiRule": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objects": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verbs": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiVerb"
+          }
+        }
+      },
+      "required": [
+        "group",
+        "objects",
+        "verbs"
+      ],
+      "additionalProperties": false
+    },
+    "ApiVerb": {
+      "type": "string",
+      "enum": [
+        "get",
+        "list",
+        "watch",
+        "create",
+        "update",
+        "patch",
+        "delete"
+      ]
+    },
+    "DestinationRange": {
+      "type": "object",
+      "properties": {
+        "cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "cidr",
+        "port"
+      ],
+      "additionalProperties": false
     },
     "ResolvedProbe": {
       "anyOf": [
@@ -1114,6 +1210,18 @@
         },
         "credential": {
           "$ref": "#/$defs/ResolvedGrant"
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EgressPeer"
+          }
+        },
+        "destinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DestinationRange"
+          }
         }
       },
       "required": [
@@ -1123,7 +1231,8 @@
         "uid",
         "gid",
         "identity",
-        "claim"
+        "claim",
+        "egress"
       ],
       "additionalProperties": false
     },
@@ -1190,6 +1299,41 @@
         "env",
         "file",
         "self"
+      ]
+    },
+    "EgressPeer": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/EgressRule"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "rule",
+        "namespace",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "EgressRule": {
+      "type": "string",
+      "enum": [
+        "cluster-dns",
+        "secret-store",
+        "datastore"
       ]
     },
     "ResolvedEngineGrant": {
@@ -1484,42 +1628,76 @@
       "enum": [
         "tier-proxy",
         "metrics-stack",
-        "consumer"
+        "consumer",
+        "backup"
       ]
     },
-    "EgressPeer": {
+    "ResolvedPolicyJob": {
       "type": "object",
       "properties": {
-        "rule": {
-          "$ref": "#/$defs/EgressRule"
+        "identity": {
+          "type": "string",
+          "minLength": 1
         },
         "namespace": {
           "type": "string",
           "minLength": 1
         },
-        "process": {
+        "image": {
           "type": "string",
           "minLength": 1
         },
-        "port": {
+        "uid": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deadline": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EgressPeer"
+          }
         }
       },
       "required": [
-        "rule",
+        "identity",
         "namespace",
-        "port"
+        "image",
+        "uid",
+        "gid",
+        "role",
+        "address",
+        "memory",
+        "cpu",
+        "deadline",
+        "egress"
       ],
       "additionalProperties": false
-    },
-    "EgressRule": {
-      "type": "string",
-      "enum": [
-        "cluster-dns",
-        "secret-store"
-      ]
     }
   }
 }

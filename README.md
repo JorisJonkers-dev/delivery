@@ -27,8 +27,10 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
-| `scripts/sync-schemas.sh` | Fetches the vendored files from deploy-kit at one commit |
-| `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger and the Release Gate |
+| `scripts/sync-schemas.sh` | Fetches the vendored files from deploy-kit at one release |
+| `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger, the Release Gate and the Collector, each with the Kubernetes API access it declares |
+| `deploy/env/collector/base.env` | What the Collector's Process receives: the cluster it captures, the repository it commits to, and its GitHub App |
+| `internal/declared/` | The test that holds each `deploy/<service>/rbac.yaml` to the `api` block its Process declares |
 | `Taskfile.yml` | `schemas:sync`, `schemas:check`, `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
 
 The rest (`.golangci.yml`, the workflows, release-please) is `template-go`'s, unchanged but for
@@ -120,9 +122,10 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
 - **It does not start anything.** Unsuspending the migration and the prepare Jobs is
   JorisJonkers-dev/delivery#3; until then an Application with a migration waits at `may-start`.
 
-Its grant is [`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml): `get` on
-ConfigMaps, Canaries and Deployments, `list` on Jobs and pods. deploy-kit renders neither that grant nor the
-token it needs yet (JorisJonkers-dev/deploy-kit#202).
+Its grant is `get` on ConfigMaps, Canaries and Deployments, and `list` on Jobs and pods. The
+`api` block of its Process in `deploy/delivery.project.yml` declares it, and deploy-kit renders
+the ClusterRole, its binding and the token from that.
+[`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml) is the same grant as objects.
 
 ## The Vault policy job
 
@@ -162,8 +165,9 @@ any Application that holds a grant, and the unit hands it the documents as files
 - **A call that fails stops the run**, with exit 1, which stops the Reconcile Unit: no
   Application that holds a grant starts against policies Vault does not hold.
 
-deploy-kit does not render the Job itself yet, nor the ConfigMap that carries the documents
-(JorisJonkers-dev/deploy-kit#202). A grant deploy-kit does not render yet, `custody` and its
+deploy-kit renders the Job, and the ConfigMap that carries the documents, where the Platform
+document names the job in `policyJob`; both are named by the digest of the documents, so a
+changed policy set is a new Job. A grant deploy-kit does not render yet, `custody` and its
 prefix, will need the glob this job refuses today.
 
 ## The Collector
@@ -199,9 +203,11 @@ Estate repository. `GET /fresh` tells them apart: it answers 200 while a capture
 twice the interval and 503 after, and it is the Collector's liveness probe, so one that stopped
 succeeding is restarted and shows as restarts.
 
-**Not deployed yet.** The Collector reads three kinds cluster-wide, and Project Intent has no
-cluster-wide read to declare yet (JorisJonkers-dev/deploy-kit#202), so it is not in
-`deploy/delivery.project.yml`. `deploy/collector/rbac.yaml` is the grant the envtest case proves.
+The Collector is an Application of `deploy/delivery.project.yml`. Its `api` block declares the
+three kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
+Platform document admits it; its GitHub App arrives as variables, from a grant on
+`secret/data/delivery-system/collector`. `deploy/collector/rbac.yaml` is the same grant as
+objects, which the envtest case applies.
 
 ## Run it
 
