@@ -3,13 +3,15 @@
 // the backup claim at /backup and keeps the newest BACKUP_RETAIN of its method.
 //
 //   - files reads the volume, mounted read-only at /data, into a gzipped tar.
-//   - postgres runs pg_dumpall against the server libpq's variables name (PGHOST, PGUSER and
-//     PGPASSWORD) into a gzipped SQL file.
-//   - rabbitmq reads the broker's definitions from the management API at RABBITMQ_MANAGEMENT_URL,
-//     as RABBITMQ_USERNAME with RABBITMQ_PASSWORD.
+//   - postgres runs pg_dumpall against the server at BACKUP_HOST and BACKUP_PORT, as PGUSER with
+//     PGPASSWORD, into a gzipped SQL file.
+//   - rabbitmq reads the broker's definitions from the management API at BACKUP_HOST and
+//     BACKUP_PORT, as RABBITMQ_USERNAME with RABBITMQ_PASSWORD.
 //
-// The render does not yet hand the two network methods their peer or a credential
-// (JorisJonkers-dev/deploy-kit#284), so each refuses to run without them rather than guess.
+// The render hands a network method its peer as BACKUP_HOST and BACKUP_PORT, and the keys of the
+// credential it logs in with as variables (deploy-kit spec/v1/14-platform-intent.md#engines): the
+// operator writes PGUSER and PGPASSWORD, or RABBITMQ_USERNAME and RABBITMQ_PASSWORD, at the
+// Process's derived path. A method refuses to run without them rather than guess.
 // BACKUP_OFF_CLUSTER is not copied to yet: the local generation is written and the run fails.
 package main
 
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -96,11 +99,12 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 			return backup.Archive(at.data, w)
 		}, nil
 	case "postgres":
-		if err := require(getenv, "PGHOST", "PGUSER", "PGPASSWORD"); err != nil {
+		if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "PGUSER", "PGPASSWORD"); err != nil {
 			return backup.Generation{}, nil, err
 		}
-		env := []string{}
-		for _, key := range []string{"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGSSLMODE"} {
+		// pg_dumpall reads libpq's own variables, so the peer is handed on under their names.
+		env := []string{"PGHOST=" + getenv("BACKUP_HOST"), "PGPORT=" + getenv("BACKUP_PORT")}
+		for _, key := range []string{"PGUSER", "PGPASSWORD", "PGSSLMODE"} {
 			if value := getenv(key); value != "" {
 				env = append(env, key+"="+value)
 			}
@@ -109,11 +113,12 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 			return backup.Dump(ctx, or(getenv("PG_DUMPALL"), "pg_dumpall"), env, w)
 		}, nil
 	case "rabbitmq":
-		if err := require(getenv, "RABBITMQ_MANAGEMENT_URL", "RABBITMQ_USERNAME", "RABBITMQ_PASSWORD"); err != nil {
+		if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "RABBITMQ_USERNAME", "RABBITMQ_PASSWORD"); err != nil {
 			return backup.Generation{}, nil, err
 		}
+		management := "http://" + net.JoinHostPort(getenv("BACKUP_HOST"), getenv("BACKUP_PORT"))
 		return backup.Generation{Method: "rabbitmq", Extension: ".json"}, func(w io.Writer) error {
-			return backup.Definitions(ctx, http.DefaultClient, getenv("RABBITMQ_MANAGEMENT_URL"),
+			return backup.Definitions(ctx, http.DefaultClient, management,
 				getenv("RABBITMQ_USERNAME"), getenv("RABBITMQ_PASSWORD"), w)
 		}, nil
 	default:
@@ -129,7 +134,7 @@ func require(getenv func(string) string, names ...string) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%v not set: the render does not hand a network method its peer yet (JorisJonkers-dev/deploy-kit#284)", missing)
+		return fmt.Errorf("%v not set: the render hands a network method its peer and its credential's keys (deploy-kit spec/v1/14-platform-intent.md#engines)", missing)
 	}
 	return nil
 }

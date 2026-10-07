@@ -1,12 +1,14 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,9 +85,10 @@ func TestWhatIsNotARunIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 		"two methods":          {[]string{"files", "postgres"}, map[string]string{"BACKUP_RETAIN": "1"}},
 		"an unknown method":    {[]string{"mongo"}, map[string]string{"BACKUP_RETAIN": "1"}},
 		"no retain":            {[]string{"files"}, nil},
-		"postgres, no peer":    {[]string{"postgres"}, map[string]string{"BACKUP_RETAIN": "1", "PGUSER": "backup"}},
-		"rabbitmq, no peer":    {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1"}},
-		"rabbitmq, no account": {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1", "RABBITMQ_MANAGEMENT_URL": "http://rabbitmq:15672"}},
+		"postgres, no peer":    {[]string{"postgres"}, map[string]string{"BACKUP_RETAIN": "1", "PGUSER": "backup", "PGPASSWORD": "secret"}},
+		"postgres, no account": {[]string{"postgres"}, map[string]string{"BACKUP_RETAIN": "1", "BACKUP_HOST": "postgres", "BACKUP_PORT": "5432"}},
+		"rabbitmq, no peer":    {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1", "RABBITMQ_USERNAME": "backup", "RABBITMQ_PASSWORD": "secret"}},
+		"rabbitmq, no account": {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1", "BACKUP_HOST": "rabbitmq", "BACKUP_PORT": "15672"}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -100,9 +103,9 @@ func TestWhatIsNotARunIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}
 }
 
-func TestANetworkMethodWithoutItsPeerNamesTheGap(t *testing.T) {
+func TestANetworkMethodWithoutItsPeerNamesWhatIsMissing(t *testing.T) {
 	_, _, err := run(context.Background(), []string{"postgres"}, env(map[string]string{"BACKUP_RETAIN": "1"}), claim(t), time.Now())
-	if err == nil || !strings.Contains(err.Error(), "deploy-kit#284") || !strings.Contains(err.Error(), "PGHOST") {
+	if err == nil || !strings.Contains(err.Error(), "BACKUP_HOST") || !strings.Contains(err.Error(), "PGPASSWORD") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -115,13 +118,17 @@ func TestPostgresDumpsThroughPgDumpall(t *testing.T) {
 		t.Fatal(err)
 	}
 	written, _, err := run(context.Background(), []string{"postgres"}, env(map[string]string{
-		"BACKUP_RETAIN": "3", "PGHOST": "postgres", "PGUSER": "backup", "PGPASSWORD": "secret", "PG_DUMPALL": command,
+		"BACKUP_RETAIN": "3", "BACKUP_HOST": "postgres.data-system.svc.cluster.local", "BACKUP_PORT": "5432",
+		"PGUSER": "backup", "PGPASSWORD": "secret", "PG_DUMPALL": command,
 	}), at, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasSuffix(written, ".sql.gz") {
 		t.Fatalf("wrote %s", written)
+	}
+	if dump := gunzipped(t, written); dump != "-- backup@postgres.data-system.svc.cluster.local:5432\n" {
+		t.Fatalf("dumped %q", dump)
 	}
 }
 
@@ -131,8 +138,13 @@ func TestRabbitmqReadsTheDefinitions(t *testing.T) {
 	}))
 	defer server.Close()
 	at := claim(t)
+	peer, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	written, _, err := run(context.Background(), []string{"rabbitmq"}, env(map[string]string{
-		"BACKUP_RETAIN": "3", "RABBITMQ_MANAGEMENT_URL": server.URL, "RABBITMQ_USERNAME": "backup", "RABBITMQ_PASSWORD": "secret",
+		"BACKUP_RETAIN": "3", "BACKUP_HOST": peer.Hostname(), "BACKUP_PORT": peer.Port(),
+		"RABBITMQ_USERNAME": "backup", "RABBITMQ_PASSWORD": "secret",
 	}), at, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -148,4 +160,23 @@ func TestAFailedWriteFailsTheRun(t *testing.T) {
 		env(map[string]string{"BACKUP_RETAIN": "1"}), at, time.Now); code != 1 {
 		t.Fatalf("exited %d", code)
 	}
+}
+
+// gunzipped is what the gzipped generation at path holds.
+func gunzipped(t *testing.T, path string) string {
+	t.Helper()
+	file, err := os.Open(path) //nolint:gosec // G304: the generation this run wrote
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
 }
