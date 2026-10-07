@@ -116,6 +116,8 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 		if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "RABBITMQ_USERNAME", "RABBITMQ_PASSWORD"); err != nil {
 			return backup.Generation{}, nil, err
 		}
+		// The management surface serves plain HTTP inside the cluster, and the backup identity's
+		// policy admits this pod to that one port of that one Process and nowhere else in it.
 		management := "http://" + net.JoinHostPort(getenv("BACKUP_HOST"), getenv("BACKUP_PORT"))
 		return backup.Generation{Method: "rabbitmq", Extension: ".json"}, func(w io.Writer) error {
 			return backup.Definitions(ctx, http.DefaultClient, management,
