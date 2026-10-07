@@ -10,6 +10,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | Release Gate: answers Flagger's webhooks and fails closed | answers all three, starts and undoes migrations, and logs held releases, see [The Release Gate](#the-release-gate); not deployed yet |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
+| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. No off-cluster copy yet, and the two network methods wait on the render for their peer ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)) |
 
 ## What is in it
 
@@ -24,6 +25,8 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/githubapp/` | One file of one repository, read and written as a GitHub App installation |
 | `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list three kinds |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
+| `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
+| `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN`, and what each method writes: a gzipped tar of `/data`, a gzipped `pg_dumpall`, the broker's definitions |
 | `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
@@ -270,6 +273,7 @@ task check      # lint, schemas:check, gen:check, tests with coverage, build, se
 docker build --build-arg APP=release-gate -t release-gate .
 docker build --build-arg APP=vault-policy -t vault-policy .
 docker build --build-arg APP=collector -t collector .
+docker build --file backup.Dockerfile --target file-backup -t file-backup .
 ```
 
 `task test` fails below 80% statement coverage of hand-written code (`COVERAGE_MIN` in
