@@ -38,3 +38,6 @@ jobs:
           for app in release-gate collector vault-policy; do
             docker build --build-arg VERSION=ci --build-arg APP="$app" -t "$app:ci" .
           done
+          for method in file-backup postgres-backup rabbitmq-backup; do
+            docker build --build-arg VERSION=ci --file backup.Dockerfile --target "$method" -t "$method:ci" .
+          done

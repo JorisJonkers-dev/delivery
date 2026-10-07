@@ -82,12 +82,14 @@ jobs:
             echo "name: delivery"
             echo "images:"
           } > images.lock.yml
-          for app in release-gate collector vault-policy; do
-            image="ghcr.io/jorisjonkers-dev/delivery/${app}"
-            docker buildx build . \
+          # build <image> <docker build options...>: build and push one
+          # multi-arch image, and append its lock entry.
+          build() {
+            local app="$1" image="ghcr.io/jorisjonkers-dev/delivery/$1" digest user
+            shift
+            docker buildx build . "$@" \
               --platform linux/amd64,linux/arm64 \
               --build-arg VERSION="$VERSION" \
-              --build-arg APP="$app" \
               --tag "${image}:${TAG}" \
               --metadata-file "${app}.json" \
               --push
@@ -107,6 +109,16 @@ jobs:
               echo "    gid: ${user##*:}"
             } >> images.lock.yml
             echo "published ${image}@${digest} as ${user}"
+          }
+          for app in release-gate collector vault-policy; do
+            build "$app" --build-arg APP="$app"
+          done
+          # The backup method images the Platform document's engines name. The
+          # project's share drops them, since the project file names none; the
+          # Platform document's own lock pins them, by pull request in
+          # JorisJonkers-dev/estate.
+          for method in file-backup postgres-backup rabbitmq-backup; do
+            build "$method" --file backup.Dockerfile --target "$method"
           done
           # Flagger is upstream's image, not built here, but this repository's
           # project file declares it, so its share locks it too. The digest is
