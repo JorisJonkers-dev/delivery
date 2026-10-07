@@ -112,3 +112,22 @@ jobs:
         with:
           name: images-lock
           path: images.lock.yml
+
+  # This repository's own Intent Fragment, for the same release: the project
+  # file, packed with the images lock share the job above wrote, pushed and
+  # signed, and composition started in the estate
+  # (deploy-kit spec/v1/40-composition.md#fragments).
+  fragment:
+    needs: [release-please, publish]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/publish-fragment.yml@v0.19.0
+    with:
+      project-file: deploy/delivery.project.yml
+      version: ${{ needs.release-please.outputs.tag_name }}
+      validate-with: deploy/env
+      images-lock-artifact: images-lock
+    secrets:
+      ESTATE_DISPATCH_APP_PRIVATE_KEY: ${{ secrets.ESTATE_DISPATCH_APP_PRIVATE_KEY }}
