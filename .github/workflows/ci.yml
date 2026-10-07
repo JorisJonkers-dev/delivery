@@ -1,7 +1,8 @@
 # One pipeline ending in "Pipeline Complete", the only required check (estate convention).
-# ONE job: GitHub bills each job rounded up to a full minute, so checks are steps, not jobs.
-# `task check` is everything CI runs, so local and CI cannot drift. The image build is the one
-# step that is not a task: it needs the Docker daemon the runner has.
+# Every check is its own job, and they run in parallel: a pull request waits for the slowest
+# check rather than the sum of them, which is worth the extra minutes GitHub bills per job.
+# Each job runs one `task`, the same tasks `task check` runs in sequence, so local and CI
+# cannot drift.
 name: CI
 
 on:
@@ -18,10 +19,15 @@ permissions:
   contents: read
 
 jobs:
-  pipeline-complete:
-    name: Pipeline Complete
+  check:
+    name: Check (${{ matrix.task }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # Every failure is reported, not only the first.
+      fail-fast: false
+      matrix:
+        task: [lint, schemas:check, gen:check, test, build, secrets]
     steps:
       - uses: actions/checkout@v7
 
@@ -29,15 +35,56 @@ jobs:
         with:
           cache: true
 
-      - name: Check
-        run: mise exec -- task check
+      - name: Run the task
+        env:
+          TASK: ${{ matrix.task }}
+        run: mise exec -- task "$TASK"
 
-      - name: Container image builds
-        if: ${{ !cancelled() }}
+  # The image builds need the Docker daemon the runner has, so they are not a task.
+  images:
+    name: Image (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: release-gate
+            args: "--build-arg APP=release-gate"
+          - image: collector
+            args: "--build-arg APP=collector"
+          - image: vault-policy
+            args: "--build-arg APP=vault-policy"
+          - image: file-backup
+            args: "--file backup.Dockerfile --target file-backup"
+          - image: postgres-backup
+            args: "--file backup.Dockerfile --target postgres-backup"
+          - image: rabbitmq-backup
+            args: "--file backup.Dockerfile --target rabbitmq-backup"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        env:
+          IMAGE: ${{ matrix.image }}
+          ARGS: ${{ matrix.args }}
         run: |
-          for app in release-gate collector vault-policy; do
-            docker build --build-arg VERSION=ci --build-arg APP="$app" -t "$app:ci" .
-          done
-          for method in file-backup postgres-backup rabbitmq-backup; do
-            docker build --build-arg VERSION=ci --file backup.Dockerfile --target "$method" -t "$method:ci" .
+          # shellcheck disable=SC2086 # ARGS is a list of options, split on purpose
+          docker build --build-arg VERSION=ci $ARGS -t "$IMAGE:ci" .
+
+  # The one required check: green only when every job above is. `always()` so a failed or
+  # cancelled job still reports here, as a failure, rather than leaving the check pending.
+  pipeline-complete:
+    name: Pipeline Complete
+    if: ${{ always() }}
+    needs: [check, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [ "$result" = success ] || { echo "a job ended ${result}"; exit 1; }
           done
