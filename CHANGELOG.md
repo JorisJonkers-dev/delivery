@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.1.0...v0.1.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* lock Flagger in the release's images lock share ([#29](https://github.com/JorisJonkers-dev/delivery/issues/29)) ([3b72521](https://github.com/JorisJonkers-dev/delivery/commit/3b7252114e5620e6dccb7babe92df3a7dbdc2fa7))
+
 ## 0.1.0 (2026-10-07)
 
 
