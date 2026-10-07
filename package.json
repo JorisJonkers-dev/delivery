@@ -1,0 +1,8 @@
+{
+  "name": "delivery-deploy",
+  "private": true,
+  "description": "Pins the deploy-kit release this repository's Intent Fragment is validated and packed with.",
+  "devDependencies": {
+    "@jorisjonkers-dev/deploy-kit": "0.7.0"
+  }
+}
