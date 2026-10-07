@@ -71,6 +71,8 @@ jobs:
       - name: Build and push each command's image, and write the images lock share
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
+          # Flagger's multi-arch index, by digest; the tag is for a reader.
+          FLAGGER: ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b
         run: |
           VERSION="${TAG#v}"
           {
@@ -106,6 +108,25 @@ jobs:
             } >> images.lock.yml
             echo "published ${image}@${digest} as ${user}"
           done
+          # Flagger is upstream's image, not built here, but this repository's
+          # project file declares it, so its share locks it too. The digest is
+          # pinned below and bumped by pull request; the user is read from the
+          # image itself, whose config names it only as `nobody`.
+          image="${FLAGGER%%:*}"
+          digest="${FLAGGER##*@}"
+          uid="$(docker run --rm --platform linux/amd64 --entrypoint id "$FLAGGER" -u)"
+          gid="$(docker run --rm --platform linux/amd64 --entrypoint id "$FLAGGER" -g)"
+          case "${uid}:${gid}" in
+            *[!0-9:]*|:*|*:) echo "::error::flagger runs as '${uid}:${gid}', not a numeric uid:gid"; exit 1 ;;
+          esac
+          {
+            echo "  flagger:"
+            echo "    repository: ${image}"
+            echo "    digest: \"${digest}\""
+            echo "    uid: ${uid}"
+            echo "    gid: ${gid}"
+          } >> images.lock.yml
+          echo "locked ${FLAGGER} as ${uid}:${gid}"
           cat images.lock.yml >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
