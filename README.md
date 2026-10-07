@@ -10,7 +10,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | Release Gate: answers Flagger's webhooks and fails closed | answers all three, starts and undoes migrations, and logs held releases, see [The Release Gate](#the-release-gate); not deployed yet |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
-| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. No off-cluster copy yet, and the two network methods wait on the render for their peer ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)) |
+| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). No off-cluster copy yet |
 
 ## What is in it
 
