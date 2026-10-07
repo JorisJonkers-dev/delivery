@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.1.1...v0.2.0) (2026-10-07)
+
+
+### Features
+
+* build the backup method images the Platform document's engines name ([#31](https://github.com/JorisJonkers-dev/delivery/issues/31)) ([50ed4c4](https://github.com/JorisJonkers-dev/delivery/commit/50ed4c433c4956c1ff7936879af0f9ee9b887dcf))
+
 ## [0.1.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.1.0...v0.1.1) (2026-10-07)
 
 
