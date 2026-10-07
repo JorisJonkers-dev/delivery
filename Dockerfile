@@ -19,5 +19,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/app /app
 EXPOSE 8080
-USER nonroot:nonroot
+# distroless nonroot, by number: the images lock refuses a named user.
+USER 65532:65532
 ENTRYPOINT ["/app"]
