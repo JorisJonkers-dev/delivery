@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.2.0...v0.3.0) (2026-10-07)
+
+
+### Features
+
+* **backup:** dump the peer the render hands a network method ([#34](https://github.com/JorisJonkers-dev/delivery/issues/34)) ([b66ee6a](https://github.com/JorisJonkers-dev/delivery/commit/b66ee6a7768406c9eb8af0944e02028b55746515))
+
 ## [0.2.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.1.1...v0.2.0) (2026-10-07)
 
 
