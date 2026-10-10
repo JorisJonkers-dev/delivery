@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.10
+# syntax=docker/dockerfile:1.27
 # The backup method images the Platform document's engines name, one target each: file-backup,
 # postgres-backup and rabbitmq-backup. All three run cmd/backup; only what each needs beside it
 # differs. Cross-compiles on the build platform, as the Dockerfile beside it does.
