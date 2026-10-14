@@ -26,9 +26,13 @@ const (
 // only those pods are Processes.
 const ManagedSelector = managedByLabel + "=" + managedBy
 
-// BackupSelector selects the Jobs deploy-kit renders for a Rollback's backup, whose label holds
-// the request each ran for (deploy-kit spec/v1/30-deliverables.md#a-rollbacks-backup).
-const BackupSelector = "estate.jorisjonkers.dev/rollback-backup"
+// BackupLabel holds the request a Rollback's backup Job ran for
+// (deploy-kit spec/v1/30-deliverables.md#a-rollbacks-backup).
+const BackupLabel = "estate.jorisjonkers.dev/rollback-backup"
+
+// BackupSelector selects the Jobs deploy-kit renders for a Rollback's backup: marked with a
+// request, and rendered by the model, as a placement's pod is.
+const BackupSelector = BackupLabel + "," + ManagedSelector
 
 // namespaceSuffix ends every Project's namespace, which is its name and this.
 const namespaceSuffix = "-system"
@@ -73,15 +77,18 @@ func (f Facts) Equal(other Facts) bool {
 		slices.Equal(f.Backups, other.Backups)
 }
 
-// CaptureBackups reads how each Rollback's backup Job ended. A Job still running, and one
-// deploy-kit did not mark with a request, says nothing yet. The result is ordered.
+// CaptureBackups reads how each Rollback's backup Job ended. A Job still running says nothing
+// yet, and one deploy-kit did not render says nothing at all: the outcome moves a pin, so a Job
+// is believed only where it carries the request, the mark of the model's render, and a Project's
+// namespace. The result is ordered.
 func CaptureBackups(jobs []batchv1.Job) []Backup {
 	var backups []Backup
 	for i := range jobs {
 		job := &jobs[i]
-		request := job.Labels[BackupSelector]
+		request := job.Labels[BackupLabel]
 		outcome, at, ended := endOf(job)
-		if request == "" || !ended {
+		if request == "" || job.Labels[managedByLabel] != managedBy ||
+			!strings.HasSuffix(job.Namespace, namespaceSuffix) || !ended {
 			continue
 		}
 		backups = append(backups, Backup{

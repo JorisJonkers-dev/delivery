@@ -188,8 +188,9 @@ placements:
 // says where it has one.
 func job(namespace, name, request string, ended batchv1.JobConditionType, status corev1.ConditionStatus) batchv1.Job {
 	j := batchv1.Job{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
+	j.Labels = map[string]string{"app.kubernetes.io/managed-by": "deploy-kit"}
 	if request != "" {
-		j.Labels = map[string]string{collector.BackupSelector: request}
+		j.Labels[collector.BackupLabel] = request
 	}
 	if ended != "" {
 		j.Status.Conditions = []batchv1.JobCondition{
@@ -200,14 +201,22 @@ func job(namespace, name, request string, ended batchv1.JobConditionType, status
 	return j
 }
 
+// forged is a Job carrying a request that deploy-kit did not render.
+func forged(j batchv1.Job) batchv1.Job {
+	delete(j.Labels, "app.kubernetes.io/managed-by")
+	return j
+}
+
 func TestCaptureBackupsReportsEachEndedRollbackJobInOrder(t *testing.T) {
 	got := collector.CaptureBackups([]batchv1.Job{
 		job("data-system", "rabbitmq-data-backup-2", "2", batchv1.JobFailed, corev1.ConditionTrue),
 		job("data-system", "postgres-data-backup-2", "2", batchv1.JobComplete, corev1.ConditionTrue),
-		job("notes", "notes-backup-1", "1", batchv1.JobComplete, corev1.ConditionTrue),
+		job("notes-system", "notes-backup-1", "1", batchv1.JobComplete, corev1.ConditionTrue),
 		job("data-system", "running-2", "2", "", ""),
 		job("data-system", "not-yet-2", "2", batchv1.JobComplete, corev1.ConditionFalse),
 		job("data-system", "unmarked", "", batchv1.JobComplete, corev1.ConditionTrue),
+		forged(job("data-system", "forged-2", "2", batchv1.JobComplete, corev1.ConditionTrue)),
+		job("default", "outside-2", "2", batchv1.JobComplete, corev1.ConditionTrue),
 	})
 	want := []collector.Backup{
 		{Request: "1", Project: "notes", Job: "notes-backup-1", Outcome: "succeeded", FinishedAt: "2026-10-03T05:00:00Z"},

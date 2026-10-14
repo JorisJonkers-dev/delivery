@@ -239,7 +239,7 @@ backup, and compares what they say with
 |---|---|
 | a binding, `{claim, node}` | a bound claim's name, and the one node its volume's node affinity names under `kubernetes.io/hostname`. A volume any node can mount binds its claim to nothing |
 | a placement, `{process, node}` | a pod labelled `app.kubernetes.io/managed-by: deploy-kit`: its `app.kubernetes.io/name` and the node it is scheduled to. A pod that has finished is not a placement |
-| a backup, `{request, project, job, outcome, finishedAt}` | a Job labelled `estate.jorisjonkers.dev/rollback-backup`: the label's value, its namespace without `-system`, its name, and its `Complete` or `Failed` condition and when that became true. A Job still running is not listed, and `backups` is written only when one is |
+| a backup, `{request, project, job, outcome, finishedAt}` | a Job labelled `estate.jorisjonkers.dev/rollback-backup` and `app.kubernetes.io/managed-by: deploy-kit`, in a namespace ending `-system`: the request label's value, its namespace without `-system`, its name, and its `Complete` or `Failed` condition and when that became true. A Job still running is not listed, and `backups` is written only when one is |
 
 Facts are ordered and free of duplicates. When they equal the committed snapshot's, the capture
 commits nothing, and `capturedAt` stays what it was. When they differ, it writes the file
