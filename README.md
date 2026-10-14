@@ -119,7 +119,9 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   Applications at most, with `truncated` set beyond that. This is how the estate dashboard reads
   both without any ConfigMap access of its own (JorisJonkers-dev/estate-dashboard#15): it declares
   an edge to the gate's `http` surface, which its derived policy then admits. Reading it starts
-  and writes nothing, so it checks no caller.
+  and writes nothing, so it checks no caller; and because it checks none, one read answers it for
+  15 seconds and only one read runs at a time, so asking it often costs the API server, and the
+  client Flagger's webhooks share, nothing more.
 - **It answers only at the revision the asking member's Canary carries.** A question about a
   render that has been replaced, or about a Canary that is not there, is refused, and the two
   read the same.

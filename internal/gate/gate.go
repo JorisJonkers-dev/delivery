@@ -140,10 +140,15 @@ type Gate struct {
 	askedAt map[string]string
 	// standing is what the last round of tending found.
 	standing Standing
+
+	// served is the last answer of GET /releases.
+	served served
 }
 
 // New returns a Gate reading cluster.
-func New(cluster Cluster) *Gate { return &Gate{cluster: cluster, askedAt: map[string]string{}} }
+func New(cluster Cluster) *Gate {
+	return &Gate{cluster: cluster, askedAt: map[string]string{}, served: served{now: time.Now}}
+}
 
 func (g *Gate) noteAsked(q Question) {
 	g.mu.Lock()

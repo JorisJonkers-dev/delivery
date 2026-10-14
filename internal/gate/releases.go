@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/JorisJonkers-dev/delivery/internal/deploykit/resolved"
@@ -129,10 +130,42 @@ func (g *Gate) release(ctx context.Context, a Gated) (Release, error) {
 	return release, nil
 }
 
+// servedFor is how long one read of the releases answers GET /releases. The route checks no
+// caller, and a read is a list and two gets per Application through the client the webhooks
+// share, so asking it often must not cost the cluster more: at most one read per period, and one
+// at a time. A screen that refreshes is no slower than this anyway.
+const servedFor = 15 * time.Second
+
+// served is the last read of the releases, and when it was made.
+type served struct {
+	mu       sync.Mutex
+	now      func() time.Time
+	at       time.Time
+	releases Releases
+}
+
+// served returns the releases as last read, reading them again where that read is older than
+// servedFor. Callers wait on one read rather than each making their own; a read that fails is
+// not kept, so the next caller tries again.
+func (g *Gate) servedReleases(ctx context.Context) (Releases, error) {
+	g.served.mu.Lock()
+	defer g.served.mu.Unlock()
+	now := g.served.now()
+	if !g.served.at.IsZero() && now.Sub(g.served.at) < servedFor {
+		return g.served.releases, nil
+	}
+	releases, err := g.Releases(ctx)
+	if err != nil {
+		return Releases{}, err
+	}
+	g.served.at, g.served.releases = now, releases
+	return releases, nil
+}
+
 // releasesRoute answers GET /releases. It answers anyone the gate's policy admits: what it says
 // is what the dashboard shows, and no answer of it starts or holds anything.
 func (g *Gate) releasesRoute(w http.ResponseWriter, r *http.Request, failed func(error)) {
-	releases, err := g.Releases(r.Context())
+	releases, err := g.servedReleases(r.Context())
 	if err != nil {
 		failed(err)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
