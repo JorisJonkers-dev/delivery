@@ -1,6 +1,8 @@
 // Command backup is the entrypoint of every backup method image the Platform document's engines
 // name: `backup files`, `backup postgres` or `backup rabbitmq`. Each writes one generation into
-// the backup claim at /backup and keeps the newest BACKUP_RETAIN of its method.
+// the backup claim at /backup and keeps the newest BACKUP_RETAIN of its method. A Rollback's
+// one-shot run, handed BACKUP_ROLLBACK, writes a copy BACKUP_RETAIN never counts, and every run
+// deletes such copies once they are 7 days old.
 //
 //   - files reads the volume, mounted read-only at /data, into a gzipped tar.
 //   - postgres runs pg_dumpall against the server at BACKUP_HOST and BACKUP_PORT, as PGUSER with
@@ -77,14 +79,24 @@ func run(ctx context.Context, args []string, getenv func(string) string, at path
 	if err != nil {
 		return "", nil, err
 	}
+	generation.Rollback = settings.Rollback
 	written, err := backup.Write(at.backup, generation, now, produce)
 	if err != nil {
 		return "", nil, err
 	}
-	removed, err := backup.Prune(at.backup, generation, settings.Retain)
-	if err != nil {
-		return written, nil, err
+	// A Rollback's copy is never counted against BACKUP_RETAIN, so a one-shot run prunes
+	// nothing by count; every run prunes the Rollbacks' copies by age.
+	var removed []string
+	if settings.Rollback == "" {
+		if removed, err = backup.Prune(at.backup, generation, settings.Retain); err != nil {
+			return written, nil, err
+		}
 	}
+	expired, err := backup.PruneRollbacks(at.backup, now)
+	if err != nil {
+		return written, removed, err
+	}
+	removed = append(removed, expired...)
 	if settings.OffCluster != "" {
 		return written, removed, fmt.Errorf("%w: kept %s locally, not copied to %s", backup.ErrOffCluster, written, settings.OffCluster)
 	}

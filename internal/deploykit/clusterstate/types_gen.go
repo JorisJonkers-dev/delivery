@@ -4,6 +4,7 @@ package clusterstate
 
 import "encoding/json"
 import "fmt"
+import "reflect"
 import "regexp"
 import "time"
 import "unicode/utf8"
@@ -11,6 +12,9 @@ import "unicode/utf8"
 type Snapshot struct {
 	// ApiVersion corresponds to the JSON schema field "apiVersion".
 	ApiVersion string `json:"apiVersion"`
+
+	// Backups corresponds to the JSON schema field "backups".
+	Backups []SnapshotBackupsElem `json:"backups,omitempty,omitzero"`
 
 	// Bindings corresponds to the JSON schema field "bindings".
 	Bindings []SnapshotBindingsElem `json:"bindings"`
@@ -29,6 +33,92 @@ type Snapshot struct {
 
 	// SchemaVersion corresponds to the JSON schema field "schemaVersion".
 	SchemaVersion string `json:"schemaVersion"`
+}
+
+type SnapshotBackupsElem struct {
+	// FinishedAt corresponds to the JSON schema field "finishedAt".
+	FinishedAt time.Time `json:"finishedAt"`
+
+	// Job corresponds to the JSON schema field "job".
+	Job string `json:"job"`
+
+	// Outcome corresponds to the JSON schema field "outcome".
+	Outcome SnapshotBackupsElemOutcome `json:"outcome"`
+
+	// Project corresponds to the JSON schema field "project".
+	Project string `json:"project"`
+
+	// Request corresponds to the JSON schema field "request".
+	Request string `json:"request"`
+}
+
+type SnapshotBackupsElemOutcome string
+
+const SnapshotBackupsElemOutcomeFailed SnapshotBackupsElemOutcome = "failed"
+const SnapshotBackupsElemOutcomeSucceeded SnapshotBackupsElemOutcome = "succeeded"
+
+var enumValues_SnapshotBackupsElemOutcome = []interface{}{
+	"succeeded",
+	"failed",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SnapshotBackupsElemOutcome) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_SnapshotBackupsElemOutcome {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SnapshotBackupsElemOutcome, v)
+	}
+	*j = SnapshotBackupsElemOutcome(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SnapshotBackupsElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["finishedAt"]; raw != nil && !ok {
+		return fmt.Errorf("field finishedAt in SnapshotBackupsElem: required")
+	}
+	if _, ok := raw["job"]; raw != nil && !ok {
+		return fmt.Errorf("field job in SnapshotBackupsElem: required")
+	}
+	if _, ok := raw["outcome"]; raw != nil && !ok {
+		return fmt.Errorf("field outcome in SnapshotBackupsElem: required")
+	}
+	if _, ok := raw["project"]; raw != nil && !ok {
+		return fmt.Errorf("field project in SnapshotBackupsElem: required")
+	}
+	if _, ok := raw["request"]; raw != nil && !ok {
+		return fmt.Errorf("field request in SnapshotBackupsElem: required")
+	}
+	type Plain SnapshotBackupsElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Job)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "job", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Project)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "project", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Request)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "request", 1)
+	}
+	*j = SnapshotBackupsElem(plain)
+	return nil
 }
 
 type SnapshotBindingsElem struct {

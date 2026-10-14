@@ -2,6 +2,10 @@
 // claim, the newest BACKUP_RETAIN kept. The contract is deploy-kit's chapter 30 backup row: the
 // volume read-only at /data, the backup claim at /backup, BACKUP_RETAIN the count to keep, and
 // BACKUP_OFF_CLUSTER the off-cluster destination where the plan copies off-cluster.
+//
+// A Rollback's one-shot run is also handed BACKUP_ROLLBACK, the request it runs for
+// (deploy-kit spec/v1/14-platform-intent.md#engines). Its copy carries a name of its own that
+// the BACKUP_RETAIN count never counts, and every run deletes such a copy once it is 7 days old.
 package backup
 
 import (
@@ -16,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,30 +31,54 @@ import (
 // local generation is written, and the run still fails, so the missing copy is never silent.
 var ErrOffCluster = errors.New("an off-cluster copy is not made yet")
 
-// Settings are what the CronJob hands every method.
+// RollbackKept is how long a Rollback's copy is kept: deploy-kit's chapter 55 fixes it.
+const RollbackKept = 7 * 24 * time.Hour
+
+// rollbackPrefix starts the name of every Rollback's copy, and of nothing else.
+const rollbackPrefix = "rollback-"
+
+// request is what a Rollback's request may be: what deploy-kit's pin annotation admits.
+var request = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,18}[A-Za-z0-9])?$`)
+
+// stamp is the time a Rollback's copy was written, the last one its name holds.
+var stamp = regexp.MustCompile(`-(\d{8}T\d{6}Z)\.`)
+
+// Settings are what the CronJob hands every method, and a one-shot Job the request it runs for.
 type Settings struct {
 	Retain     int
 	OffCluster string
+	Rollback   string
 }
 
-// ReadSettings reads BACKUP_RETAIN, required and at least one, and BACKUP_OFF_CLUSTER.
+// ReadSettings reads BACKUP_RETAIN, required and at least one, BACKUP_OFF_CLUSTER, and
+// BACKUP_ROLLBACK, which is a request where it is set at all.
 func ReadSettings(getenv func(string) string) (Settings, error) {
 	raw := getenv("BACKUP_RETAIN")
 	retain, err := strconv.Atoi(raw)
 	if err != nil || retain < 1 {
 		return Settings{}, fmt.Errorf("BACKUP_RETAIN %q is not a count of at least one", raw)
 	}
-	return Settings{Retain: retain, OffCluster: getenv("BACKUP_OFF_CLUSTER")}, nil
+	rollback := getenv("BACKUP_ROLLBACK")
+	if rollback != "" && !request.MatchString(rollback) {
+		return Settings{}, fmt.Errorf("BACKUP_ROLLBACK %q is not a request", rollback)
+	}
+	return Settings{Retain: retain, OffCluster: getenv("BACKUP_OFF_CLUSTER"), Rollback: rollback}, nil
 }
 
-// Generation names one backup: its method, and the extension of what it holds.
+// Generation names one backup: its method, the extension of what it holds, and for a
+// Rollback's copy the request it was taken for.
 type Generation struct {
 	Method    string
 	Extension string
+	Rollback  string
 }
 
 func (g Generation) name(at time.Time) string {
-	return g.Method + "-" + at.UTC().Format("20060102T150405Z") + g.Extension
+	own := g.Method + "-" + at.UTC().Format("20060102T150405Z") + g.Extension
+	if g.Rollback == "" {
+		return own
+	}
+	return rollbackPrefix + g.Rollback + "-" + own
 }
 
 func (g Generation) matches(name string) bool {
@@ -102,6 +131,36 @@ func Prune(dir string, g Generation, retain int) ([]string, error) {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return nil, fmt.Errorf("remove %s: %w", name, err)
 		}
+	}
+	return removed, nil
+}
+
+// PruneRollbacks removes every Rollback's copy in dir written longer than RollbackKept before
+// now, whatever its method and whether or not its run finished it, and returns what it removed. The time is read from the name, which
+// the run that wrote it set.
+func PruneRollbacks(dir string, now time.Time) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	var removed []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.Type().IsRegular() || !strings.HasPrefix(name, rollbackPrefix) {
+			continue
+		}
+		found := stamp.FindAllStringSubmatch(name, -1)
+		if found == nil {
+			continue
+		}
+		at, err := time.Parse("20060102T150405Z", found[len(found)-1][1])
+		if err != nil || now.Sub(at) <= RollbackKept {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			return nil, fmt.Errorf("remove %s: %w", name, err)
+		}
+		removed = append(removed, name)
 	}
 	return removed, nil
 }

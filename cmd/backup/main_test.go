@@ -60,6 +60,51 @@ func TestFilesKeepsTheNewestRetainGenerations(t *testing.T) {
 	}
 }
 
+func TestARollbacksCopyOutlivesTheCountAndGoesAfterAWeek(t *testing.T) {
+	at := claim(t)
+	day := time.Date(2026, 10, 1, 2, 45, 0, 0, time.UTC)
+	runs := []struct {
+		days     int
+		rollback string
+	}{{0, ""}, {0, "38526643693"}, {1, ""}, {2, ""}, {8, ""}}
+	var after []string
+	for i, r := range runs {
+		now := func() time.Time { return day.AddDate(0, 0, r.days).Add(time.Duration(i) * time.Minute) }
+		values := map[string]string{"BACKUP_RETAIN": "1"}
+		if r.rollback != "" {
+			values["BACKUP_ROLLBACK"] = r.rollback
+		}
+		if code := start(context.Background(), slog.New(slog.DiscardHandler), []string{"files"},
+			env(values), at, now); code != 0 {
+			t.Fatalf("run %d exited %d", i, code)
+		}
+		after = append(after, strings.Join(held(t, at.backup), " "))
+	}
+	want := []string{
+		"files-20261001T024500Z.tar.gz",
+		"files-20261001T024500Z.tar.gz rollback-38526643693-files-20261001T024600Z.tar.gz",
+		"files-20261002T024700Z.tar.gz rollback-38526643693-files-20261001T024600Z.tar.gz",
+		"files-20261003T024800Z.tar.gz rollback-38526643693-files-20261001T024600Z.tar.gz",
+		"files-20261009T024900Z.tar.gz",
+	}
+	for i := range want {
+		if after[i] != want[i] {
+			t.Errorf("after run %d holds %s, want %s", i, after[i], want[i])
+		}
+	}
+}
+
+func TestARollbacksRunRefusesARequestDeployKitWouldNot(t *testing.T) {
+	at := claim(t)
+	if code := start(context.Background(), slog.New(slog.DiscardHandler), []string{"files"},
+		env(map[string]string{"BACKUP_RETAIN": "1", "BACKUP_ROLLBACK": "../x"}), at, time.Now); code != 1 {
+		t.Fatalf("exited %d", code)
+	}
+	if names := held(t, at.backup); len(names) != 0 {
+		t.Fatalf("wrote %v", names)
+	}
+}
+
 func TestAnOffClusterPlanKeepsTheLocalGenerationAndFails(t *testing.T) {
 	at := claim(t)
 	written, _, err := run(context.Background(), []string{"files"},

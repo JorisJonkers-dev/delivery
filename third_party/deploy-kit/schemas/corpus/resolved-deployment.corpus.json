@@ -214,7 +214,9 @@
               "analysis": {
                 "interval": "30s",
                 "iterations": 4,
-                "threshold": 3
+                "threshold": 3,
+                "errorRate": "1%",
+                "latency": "500ms"
               },
               "deadline": "60s",
               "endpoint": "http://release-gate.delivery-system.svc.cluster.local:8080",
@@ -232,7 +234,7 @@
                 }
               ]
             },
-            "revision": "sha256:493fb16ace2e5e7bebf96ea8490f20c2f1dd82fbbf8ce4a9d6b67963b0bcb048",
+            "revision": "sha256:03410c20d919ef65b7ff527eda5dd719584662bf21d1acb036894023f21a014c",
             "scrape": {
               "interval": "30s",
               "path": "/metrics",
@@ -421,7 +423,9 @@
               "analysis": {
                 "interval": "30s",
                 "iterations": 4,
-                "threshold": 3
+                "threshold": 3,
+                "errorRate": "1%",
+                "latency": "500ms"
               },
               "deadline": "60s",
               "endpoint": "http://release-gate.delivery-system.svc.cluster.local:8080",
@@ -439,7 +443,7 @@
                 }
               ]
             },
-            "revision": "sha256:493fb16ace2e5e7bebf96ea8490f20c2f1dd82fbbf8ce4a9d6b67963b0bcb048",
+            "revision": "sha256:03410c20d919ef65b7ff527eda5dd719584662bf21d1acb036894023f21a014c",
             "scrape": {
               "interval": "30s",
               "path": "/metrics",

@@ -10,7 +10,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | Release Gate: answers Flagger's webhooks and fails closed | answers all three, starts and undoes migrations, and logs held releases, see [The Release Gate](#the-release-gate); not deployed yet |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
-| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). No off-cluster copy yet |
+| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. No off-cluster copy yet |
 
 ## What is in it
 
@@ -23,10 +23,10 @@ Go, and the `delivery` project that deploys them. Generated from
 | `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
 | `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
 | `internal/githubapp/` | One file of one repository, read and written as a GitHub App installation |
-| `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list three kinds |
+| `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list four kinds |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
-| `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN`, and what each method writes: a gzipped tar of `/data`, a gzipped `pg_dumpall`, the broker's definitions |
+| `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN` and a Rollback's copies by age, and what each method writes: a gzipped tar of `/data`, a gzipped `pg_dumpall`, the broker's definitions |
 | `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
@@ -230,7 +230,8 @@ prefix, will need the glob this job refuses today.
 
 The Collector captures when it starts and then once every `INTERVAL`, and keeps running: Project
 Intent has no schedule, so it keeps its own. Each capture lists PersistentVolumes,
-PersistentVolumeClaims and the pods deploy-kit renders, and compares what they say with
+PersistentVolumeClaims, the pods deploy-kit renders and the Jobs it renders for a Rollback's
+backup, and compares what they say with
 `cluster-state.yml` in the Estate repository
 ([deploy-kit `spec/v1/20-resolved-deployment.md`](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/20-resolved-deployment.md#the-collector)):
 
@@ -238,6 +239,7 @@ PersistentVolumeClaims and the pods deploy-kit renders, and compares what they s
 |---|---|
 | a binding, `{claim, node}` | a bound claim's name, and the one node its volume's node affinity names under `kubernetes.io/hostname`. A volume any node can mount binds its claim to nothing |
 | a placement, `{process, node}` | a pod labelled `app.kubernetes.io/managed-by: deploy-kit`: its `app.kubernetes.io/name` and the node it is scheduled to. A pod that has finished is not a placement |
+| a backup, `{request, project, job, outcome, finishedAt}` | a Job labelled `estate.jorisjonkers.dev/rollback-backup`: the label's value, its namespace without `-system`, its name, and its `Complete` or `Failed` condition and when that became true. A Job still running is not listed, and `backups` is written only when one is |
 
 Facts are ordered and free of duplicates. When they equal the committed snapshot's, the capture
 commits nothing, and `capturedAt` stays what it was. When they differ, it writes the file

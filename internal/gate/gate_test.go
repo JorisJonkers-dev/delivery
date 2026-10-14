@@ -12,7 +12,7 @@ const (
 	revision = "sha256:9d2c4e6a8b0d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a"
 	earlier  = "sha256:0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
 	// auth's release-gate inputs, as the render writes them: one line of canonical JSON.
-	authInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"checks":["error-rate","latency"],"process":"auth-api","readiness":{"path":"/api/actuator/health/readiness","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}]}`
+	authInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3,"errorRate":"1%","latency":"500ms"},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"checks":["error-rate","latency"],"process":"auth-api","readiness":{"path":"/api/actuator/health/readiness","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}]}`
 )
 
 // cluster is an in-memory gate.Cluster: what the gate would read, set by each test.
@@ -428,7 +428,7 @@ func TestTheGateFailsClosed(t *testing.T) {
 		"the inputs are not JSON":           func(c *cluster) { c.inputs = "{" },
 		"the inputs are not a release gate": func(c *cluster) { c.inputs = `{"members":[]}` },
 		"the Process is no member of the gate": func(c *cluster) {
-			c.inputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3},"deadline":"60s","endpoint":"http://gate","members":[{"process":"someone-else","readiness":{"tcp":5432}}]}`
+			c.inputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3,"errorRate":"1%","latency":"500ms"},"deadline":"60s","endpoint":"http://gate","members":[{"process":"someone-else","readiness":{"tcp":5432}}]}`
 		},
 	}
 	for name, ask := range questions {

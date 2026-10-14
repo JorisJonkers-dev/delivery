@@ -10,7 +10,7 @@ vars:
   COVERAGE_MIN: 80
   # The deploy-kit release the vendored schemas come from, by the commit its tag names: a tag can
   # be moved, and a commit cannot. Move both, then `task schemas:sync gen`.
-  DEPLOY_KIT_REF: fbf85804c646fe338ea743662b2a789fa249aec4 # v0.6.0
+  DEPLOY_KIT_REF: c40f6fc7e918070135234efac9d7e728663203fc # main, with deploy-kit#302
   SCHEMAS: resolved-deployment composition-lock pin-annotations cluster-state-snapshot
   VENDOR: third_party/deploy-kit
 
