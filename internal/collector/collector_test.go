@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -155,6 +157,24 @@ placements:
 		t.Fatalf("read back %q %+v %v", cluster, read, err)
 	}
 
+	ended := collector.Facts{
+		Bindings: facts.Bindings,
+		Backups: []collector.Backup{
+			{Request: "38526643693", Project: "data", Job: "postgres-data-backup-38526643693", Outcome: "failed", FinishedAt: "2026-10-03T05:00:00Z"},
+		},
+	}
+	withBackups := string(collector.Write("production", captured, ended))
+	if !strings.HasSuffix(withBackups, "placements: []\nbackups:\n"+
+		`  - { request: "38526643693", project: "data", job: "postgres-data-backup-38526643693", outcome: "failed", finishedAt: "2026-10-03T05:00:00Z" }`+"\n") {
+		t.Fatalf("a snapshot with a backup:\n%s", withBackups)
+	}
+	if _, read, err := collector.Read([]byte(withBackups)); err != nil || !read.Equal(ended) {
+		t.Fatalf("read back %+v %v", read, err)
+	}
+	if ended.Equal(collector.Facts{Bindings: facts.Bindings}) {
+		t.Fatal("a backup that ended is no fact")
+	}
+
 	none := string(collector.Write("production", captured, collector.Facts{}))
 	if !strings.HasSuffix(none, "bindings: []\nplacements: []\n") {
 		t.Fatalf("an empty snapshot:\n%s", none)
@@ -164,12 +184,60 @@ placements:
 	}
 }
 
+// job is a Job in namespace, marked with request where it is not empty, ended as the condition
+// says where it has one.
+func job(namespace, name, request string, ended batchv1.JobConditionType, status corev1.ConditionStatus) batchv1.Job {
+	j := batchv1.Job{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
+	j.Labels = map[string]string{"app.kubernetes.io/managed-by": "deploy-kit"}
+	if request != "" {
+		j.Labels[collector.BackupLabel] = request
+	}
+	if ended != "" {
+		j.Status.Conditions = []batchv1.JobCondition{
+			{Type: batchv1.JobSuspended, Status: corev1.ConditionFalse},
+			{Type: ended, Status: status, LastTransitionTime: metav1.NewTime(captured)},
+		}
+	}
+	return j
+}
+
+// forged is a Job carrying a request that deploy-kit did not render.
+func forged(j batchv1.Job) batchv1.Job {
+	delete(j.Labels, "app.kubernetes.io/managed-by")
+	return j
+}
+
+func TestCaptureBackupsReportsEachEndedRollbackJobInOrder(t *testing.T) {
+	got := collector.CaptureBackups([]batchv1.Job{
+		job("data-system", "rabbitmq-data-backup-2", "2", batchv1.JobFailed, corev1.ConditionTrue),
+		job("data-system", "postgres-data-backup-2", "2", batchv1.JobComplete, corev1.ConditionTrue),
+		job("notes-system", "notes-backup-1", "1", batchv1.JobComplete, corev1.ConditionTrue),
+		job("data-system", "running-2", "2", "", ""),
+		job("data-system", "not-yet-2", "2", batchv1.JobComplete, corev1.ConditionFalse),
+		job("data-system", "unmarked", "", batchv1.JobComplete, corev1.ConditionTrue),
+		forged(job("data-system", "forged-2", "2", batchv1.JobComplete, corev1.ConditionTrue)),
+		job("default", "outside-2", "2", batchv1.JobComplete, corev1.ConditionTrue),
+	})
+	want := []collector.Backup{
+		{Request: "1", Project: "notes", Job: "notes-backup-1", Outcome: "succeeded", FinishedAt: "2026-10-03T05:00:00Z"},
+		{Request: "2", Project: "data", Job: "postgres-data-backup-2", Outcome: "succeeded", FinishedAt: "2026-10-03T05:00:00Z"},
+		{Request: "2", Project: "data", Job: "rabbitmq-data-backup-2", Outcome: "failed", FinishedAt: "2026-10-03T05:00:00Z"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("captured %+v", got)
+	}
+	if collector.CaptureBackups(nil) != nil {
+		t.Fatal("no Job captured a backup")
+	}
+}
+
 func TestReadRefusesWhatIsNotASnapshot(t *testing.T) {
 	cases := map[string]string{
 		"not YAML":               "bindings: [",
 		"a missing list":         strings.Replace(empty, "placements: []\n", "", 1),
 		"a binding with no node": strings.Replace(empty, "bindings: []", "bindings: [{claim: a}]", 1),
 		"another kind":           strings.Replace(empty, "kind: ClusterState", "kind: ConfigMap", 1),
+		"a backup still running": empty + "backups:\n  - {request: a, project: b, job: c, outcome: running, finishedAt: \"2026-10-03T05:00:00Z\"}\n",
 	}
 	for name, document := range cases {
 		if _, _, err := collector.Read([]byte(document)); err == nil {
@@ -178,11 +246,12 @@ func TestReadRefusesWhatIsNotASnapshot(t *testing.T) {
 	}
 }
 
-// cluster is three lists, or the failure to list one of them.
+// cluster is four lists, or the failure to list one of them.
 type cluster struct {
 	volumes []corev1.PersistentVolume
 	claims  []corev1.PersistentVolumeClaim
 	pods    []corev1.Pod
+	jobs    []batchv1.Job
 	fail    string
 }
 
@@ -207,6 +276,13 @@ func (c cluster) ManagedPods(context.Context) ([]corev1.Pod, error) {
 		return nil, errList
 	}
 	return c.pods, nil
+}
+
+func (c cluster) BackupJobs(context.Context) ([]batchv1.Job, error) {
+	if c.fail == "jobs" {
+		return nil, errList
+	}
+	return c.jobs, nil
 }
 
 // repository is one file, and the writes it took.
@@ -293,6 +369,7 @@ func TestRunFailsClosed(t *testing.T) {
 		"volumes cannot be listed":    {cluster{fail: "volumes"}, &repository{document: empty}, "list PersistentVolumes: forbidden"},
 		"claims cannot be listed":     {cluster{fail: "claims"}, &repository{document: empty}, "list PersistentVolumeClaims: forbidden"},
 		"pods cannot be listed":       {cluster{fail: "pods"}, &repository{document: empty}, "list pods: forbidden"},
+		"Jobs cannot be listed":       {cluster{fail: "jobs"}, &repository{document: empty}, "list Jobs: forbidden"},
 		"the snapshot cannot be read": {changed, &repository{failRead: true}, "read the committed snapshot: unreachable"},
 		"the snapshot is not one":     {changed, &repository{document: "kind: ConfigMap\n"}, "read the committed snapshot"},
 		"the snapshot is of another cluster": {

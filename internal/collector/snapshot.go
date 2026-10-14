@@ -51,6 +51,11 @@ func Read(document []byte) (string, Facts, error) {
 	for _, p := range snapshot.Placements {
 		facts.Placements = append(facts.Placements, Placement{Process: p.Process, Node: p.Node})
 	}
+	for _, b := range snapshot.Backups {
+		facts.Backups = append(facts.Backups, Backup{
+			Request: b.Request, Project: b.Project, Job: b.Job, Outcome: string(b.Outcome), FinishedAt: b.FinishedAt.UTC().Format(time.RFC3339),
+		})
+	}
 	return snapshot.Cluster, facts, nil
 }
 
@@ -80,6 +85,17 @@ func Write(cluster string, capturedAt time.Time, facts Facts) []byte {
 	out.WriteString("\n")
 	for _, p := range facts.Placements {
 		fmt.Fprintf(&out, "  - { process: %s, node: %s }\n", strconv.Quote(p.Process), strconv.Quote(p.Node))
+	}
+
+	// Optional, and written only where a Rollback's backup has ended: a cluster that ran none
+	// keeps the snapshot it had.
+	if len(facts.Backups) > 0 {
+		out.WriteString("backups:\n")
+		for _, b := range facts.Backups {
+			fmt.Fprintf(&out, "  - { request: %s, project: %s, job: %s, outcome: %s, finishedAt: %s }\n",
+				strconv.Quote(b.Request), strconv.Quote(b.Project), strconv.Quote(b.Job),
+				strconv.Quote(b.Outcome), strconv.Quote(b.FinishedAt))
+		}
 	}
 	return []byte(out.String())
 }

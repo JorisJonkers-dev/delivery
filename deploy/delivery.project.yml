@@ -137,14 +137,18 @@ applications:
         placement:
           memory: 64Mi
           cpu: 10m
-        # What deploy/collector/rbac.yaml holds as objects: three kinds listed, cluster-wide.
+        # What deploy/collector/rbac.yaml holds as objects: four kinds listed, cluster-wide.
         api:
           reason: >-
-            the Collector captures where each bound claim and each rendered pod is, so it lists
-            the three kinds that say so, cluster-wide, and writes nothing
+            the Collector captures where each bound claim and each rendered pod is, and how each
+            Rollback's backup Job ended, so it lists the four kinds that say so, cluster-wide, and
+            writes nothing
           rules:
             - group: core
               objects: [persistentvolumes, persistentvolumeclaims, pods]
+              verbs: [get, list]
+            - group: batch
+              objects: [jobs]
               verbs: [get, list]
         # Its GitHub App: the one credential that may write cluster-state.yml to the Estate
         # repository. Delivered as variables, which is the delivery the render spells today.

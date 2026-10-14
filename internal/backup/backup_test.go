@@ -35,6 +35,84 @@ func TestReadSettings(t *testing.T) {
 	}
 }
 
+func TestReadSettingsTakesARollbacksRequestAsDeployKitWritesIt(t *testing.T) {
+	for _, request := range []string{"38526643693", "a", "run-2"} {
+		got, err := backup.ReadSettings(env(map[string]string{"BACKUP_RETAIN": "1", "BACKUP_ROLLBACK": request}))
+		if err != nil || got.Rollback != request {
+			t.Errorf("BACKUP_ROLLBACK %q read as %+v, %v", request, got, err)
+		}
+	}
+	for _, request := range []string{"-run", "run-", "run/2", "../up", strings.Repeat("a", 21)} {
+		if _, err := backup.ReadSettings(env(map[string]string{"BACKUP_RETAIN": "1", "BACKUP_ROLLBACK": request})); err == nil {
+			t.Errorf("BACKUP_ROLLBACK %q was accepted", request)
+		}
+	}
+}
+
+func TestWriteNamesARollbacksCopyByItsRequestBeforeItsMethod(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 10, 7, 2, 45, 0, 0, time.UTC)
+	written, err := backup.Write(dir, backup.Generation{Method: "files", Extension: ".tar.gz", Rollback: "38526643693"}, at,
+		func(io.Writer) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "rollback-38526643693-files-20261007T024500Z.tar.gz"); written != want {
+		t.Fatalf("wrote %s, want %s", written, want)
+	}
+	if removed, _ := backup.Prune(dir, files, 1); removed != nil {
+		t.Fatalf("the count prune removed a Rollback's copy: %v", removed)
+	}
+}
+
+func TestPruneRollbacksRemovesOnlyRollbacksCopiesOlderThanAWeek(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	names := []string{
+		"rollback-1-files-20261007T115959Z.tar.gz",
+		"rollback-1-postgres-20261007T120000Z.sql.gz",
+		"rollback-20261020T000000Z-files-20261001T000000Z.tar.gz",
+		"rollback-2-files-20261013T000000Z.tar.gz",
+		"rollback-3-files-20261001T000000Z.tar.gz.part",
+		"rollback-notes.txt",
+		"files-20261001T000000Z.tar.gz",
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "rollback-4-files-20261001T000000Z.tar.gz"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := backup.PruneRollbacks(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A partial copy a run left behind is as old as its name says, and goes with the rest.
+	want := []string{
+		"rollback-1-files-20261007T115959Z.tar.gz",
+		"rollback-20261020T000000Z-files-20261001T000000Z.tar.gz",
+		"rollback-3-files-20261001T000000Z.tar.gz.part",
+	}
+	if !slices.Equal(removed, want) {
+		t.Fatalf("removed %v, want %v", removed, want)
+	}
+	var left []string
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		left = append(left, entry.Name())
+	}
+	for _, name := range want {
+		if slices.Contains(left, name) {
+			t.Fatalf("%s is still there", name)
+		}
+	}
+	if _, err := backup.PruneRollbacks(filepath.Join(dir, "absent"), now); err == nil {
+		t.Fatal("pruned a directory that does not exist")
+	}
+}
+
 var files = backup.Generation{Method: "files", Extension: ".tar.gz"}
 
 func TestWriteNamesTheGenerationByItsTime(t *testing.T) {

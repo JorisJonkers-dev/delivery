@@ -39,6 +39,9 @@
         },
         "policyJob": {
           "$ref": "#/$defs/ResolvedPolicyJob"
+        },
+        "events": {
+          "$ref": "#/$defs/ResolvedEvents"
         }
       },
       "required": [
@@ -360,12 +363,22 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "errorRate": {
+          "type": "string",
+          "pattern": "^(100|\\d{1,2}(\\.\\d{1,2})?)%$"
+        },
+        "latency": {
+          "type": "string",
+          "pattern": "^[1-9]\\d*(ms|s)$"
         }
       },
       "required": [
         "interval",
         "iterations",
-        "threshold"
+        "threshold",
+        "errorRate",
+        "latency"
       ],
       "additionalProperties": false
     },
@@ -1404,6 +1417,9 @@
         "credential": {
           "$ref": "#/$defs/ResolvedGrant"
         },
+        "peer": {
+          "$ref": "#/$defs/BackupPeer"
+        },
         "egress": {
           "type": "array",
           "items": {
@@ -1493,6 +1509,29 @@
         "file",
         "self"
       ]
+    },
+    "BackupPeer": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "credential": {
+          "$ref": "#/$defs/ResolvedGrant"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "credential"
+      ],
+      "additionalProperties": false
     },
     "ResolvedAsset": {
       "type": "object",
@@ -1730,7 +1769,8 @@
         "metrics-stack",
         "consumer",
         "backup",
-        "migration"
+        "migration",
+        "flux-events"
       ]
     },
     "ResolvedPolicyJob": {
@@ -1797,6 +1837,24 @@
         "cpu",
         "deadline",
         "egress"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedEvents": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "namespace",
+        "address"
       ],
       "additionalProperties": false
     }

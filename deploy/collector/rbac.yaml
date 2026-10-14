@@ -1,4 +1,4 @@
-# Everything the ClusterState Collector may do in the cluster: get and list three kinds, and
+# Everything the ClusterState Collector may do in the cluster: get and list four kinds, and
 # nothing else (deploy-kit spec/v1/20-resolved-deployment.md#the-collector). It never applies.
 #
 # The envtest case in internal/collector applies this file as it is and proves both halves: the
@@ -19,6 +19,9 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [persistentvolumes, persistentvolumeclaims, pods]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs]
     verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

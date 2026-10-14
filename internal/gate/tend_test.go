@@ -16,9 +16,9 @@ import (
 
 const (
 	// auth's inputs with the migration the render hands the gate: proven against `earlier`.
-	migratingInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"process":"auth-api","readiness":{"path":"/ready","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}],"migration":{"identity":"auth-migration","nonTransactional":false,"testedAgainst":"` + earlier + `"}}`
+	migratingInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3,"errorRate":"1%","latency":"500ms"},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"process":"auth-api","readiness":{"path":"/ready","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}],"migration":{"identity":"auth-migration","nonTransactional":false,"testedAgainst":"` + earlier + `"}}`
 	// The same, for a first release: proven against nothing, with no down to return to.
-	firstInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"process":"auth-api","readiness":{"path":"/ready","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}],"migration":{"identity":"auth-migration","nonTransactional":false}}`
+	firstInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3,"errorRate":"1%","latency":"500ms"},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"process":"auth-api","readiness":{"path":"/ready","port":8081}},{"process":"auth-ui","readiness":{"path":"/","port":8080}}],"migration":{"identity":"auth-migration","nonTransactional":false}}`
 	upJob       = "auth-migration-9d2c4e6a8b0d"
 	downJob     = "auth-migration-down-9d2c4e6a8b0d"
 )
