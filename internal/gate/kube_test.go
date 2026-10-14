@@ -98,8 +98,8 @@ func TestTheInputsAreTheOneValueOfTheApplicationsConfigMap(t *testing.T) {
 	if _, err := k.Inputs(t.Context(), ns, "empty"); err == nil {
 		t.Fatal("a ConfigMap without the key is no inputs")
 	}
-	if _, err := k.Inputs(t.Context(), ns, "absent"); err == nil {
-		t.Fatal("an Application with no ConfigMap has no inputs")
+	if _, err := k.Inputs(t.Context(), ns, "absent"); !errors.Is(err, gate.ErrNoInputs) {
+		t.Fatalf("an Application with no ConfigMap has no inputs: %v", err)
 	}
 	// What the render writes is what the gate decides from, end to end.
 	answer, err := gate.New(kube([]runtime.Object{

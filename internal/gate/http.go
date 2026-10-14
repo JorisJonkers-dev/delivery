@@ -75,12 +75,17 @@ func (g *Gate) fromFlagger(r *http.Request) (bool, error) {
 	return false, nil
 }
 
-// Routes mounts the three webhooks. Flagger reads a 2xx as yes and anything else as no, so the
+// Routes mounts the three webhooks, and GET /releases. Flagger reads a 2xx as yes and anything else as no, so the
 // status is the answer: 200 is yes, 409 is "not yet", 400 is a payload that asks nothing, 403
 // is a caller that is not Flagger, and 503 is a question the gate could not answer, which is
 // also no. Flagger records a refusal's
 // body on the Canary, so a 409 says what the release waits on.
 func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
+	mux.HandleFunc("GET "+PathReleases, func(w http.ResponseWriter, r *http.Request) {
+		g.releasesRoute(w, r, func(err error) {
+			logger.ErrorContext(r.Context(), "release gate could not read the releases", "error", err)
+		})
+	})
 	for path, ask := range map[string]func(context.Context, Question) (Answer, error){
 		PathMayStart:   g.MayStart,
 		PathChecks:     g.Checks,
