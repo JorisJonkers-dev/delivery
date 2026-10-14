@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.4.0...v0.5.0) (2026-10-14)
+
+
+### Features
+
+* report each Rollout's stages to its GitHub Deployment ([#46](https://github.com/JorisJonkers-dev/delivery/issues/46)) ([ffa85f0](https://github.com/JorisJonkers-dev/delivery/commit/ffa85f07129dd915d165dfa0e61a55abf6d0f2bb))
+
 ## [0.4.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.3.0...v0.4.0) (2026-10-14)
 
 
