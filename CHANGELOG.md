@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.3.0...v0.4.0) (2026-10-14)
+
+
+### Features
+
+* back up for a Rollback, and report how each Rollback's backup ended ([#44](https://github.com/JorisJonkers-dev/delivery/issues/44)) ([a1f8c9d](https://github.com/JorisJonkers-dev/delivery/commit/a1f8c9d71121dc0bff558122e55b3f03805b1744))
+
 ## [0.3.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.2.0...v0.3.0) (2026-10-14)
 
 
