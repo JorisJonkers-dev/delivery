@@ -116,7 +116,7 @@ func TestACaptureThatFailsIsLoggedAndTheCollectorKeepsRunningUntilItIsStopped(t 
 	env["GITHUB_APP_PRIVATE_KEY"] = string(github.PEM())
 	ctx, stop := context.WithCancel(t.Context())
 	var logged bytes.Buffer
-	logger := slog.New(stopsOn{slog.NewJSONHandler(&logged, nil), "a capture failed", stop})
+	logger := slog.New(stopsOn{slog.NewJSONHandler(&logged, nil), "a pass failed", stop})
 
 	code := start(ctx, logger, func(k string) string { return env[k] }, func(string) ([]byte, error) { return nil, errors.New("no file") },
 		&rest.Config{Host: "http://127.0.0.1:1"})

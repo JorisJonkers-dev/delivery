@@ -1,7 +1,8 @@
 # deploy-kit Project Intent for the delivery machinery: the Applications that perform a switch and
-# are never switched by one, and the ClusterState Collector beside them. The Platform document
-# names Flagger and the Release Gate in `delivery.machinery` and the gate in `delivery.gate`, so
-# this file is the one project the platform owns outright
+# are never switched by one, and the ClusterState Collector and the Reporter beside them. The
+# Platform document names Flagger and the Release Gate in `delivery.machinery`, the gate in
+# `delivery.gate` and the Reporter in `delivery.reporter`, so this file is the one project the
+# platform owns outright
 # (deploy-kit spec/v1/14-platform-intent.md#delivery-policy). Its examples/delivery is this file's
 # model.
 #
@@ -9,8 +10,8 @@
 # cannot gate its own release and nothing gates Flagger's, so each derives a rolling switchover
 # (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 #
-# All three call the Kubernetes API, which no other Process of the estate does. Each declares what
-# it asks and why, in `api`, and the Platform document admits the three by name in
+# All four call the Kubernetes API, which no other Process of the estate does. Each declares what
+# it asks and why, in `api`, and the Platform document admits the four by name in
 # `apiAccess.holders`; the render derives each one's ClusterRole, its binding and its token from
 # that (deploy-kit spec/v1/16-dependencies.md#kubernetes-api-access-is-declared-and-admitted).
 # deploy/*/rbac.yaml hold the same rules as objects, for the envtest cases, and a test holds the
@@ -164,4 +165,57 @@ applications:
           # succeeding is restarted.
           liveness: { path: /fresh, port: 8080 }
         startupBudget: 10s
+        cutover: interrupted
+
+  # The Reporter: keeps every Rollout's GitHub Deployment current, stage by stage, as the cluster
+  # moves the release (deploy-kit spec/v1/55-delivery.md#rollouts). Not machinery either: it
+  # reports and decides nothing. The Platform document names it in `delivery.reporter`, which
+  # has to be an Application of this file, the one that declares the Release Gate, with a Process
+  # that provides `http`: that surface is where Flux's notification controller posts every event
+  # about a unit, and the one peer its derived policy admits.
+  - id: reporter
+    processes:
+      - name: reporter
+        lifecycle: application
+        image: reporter # built from this repository's Dockerfile
+        runtime: none
+        provides:
+          http: 8080 # Flux's events, at /flux, and its probes
+        placement:
+          memory: 64Mi
+          cpu: 10m
+        # What deploy/reporter/rbac.yaml holds as objects: four kinds read, cluster-wide.
+        api:
+          reason: >-
+            the Reporter reads each Project's unit and the source it is pinned by, the Canaries
+            the unit applied, and a settled member's Deployment and its primary, to tell where
+            the release stands, and writes nothing to the cluster
+          rules:
+            - group: kustomize.toolkit.fluxcd.io
+              objects: [kustomizations]
+              verbs: [list]
+            - group: source.toolkit.fluxcd.io
+              objects: [ocirepositories]
+              verbs: [get]
+            - group: flagger.app
+              objects: [canaries]
+              verbs: [get]
+            - group: apps
+              objects: [deployments]
+              verbs: [get]
+        # Its GitHub App: deployments write and nothing else, on every repository that releases
+        # to the estate. Delivered as variables, like the Collector's.
+        secrets:
+          - path: secret/data/delivery-system/reporter
+            keys: [app-id, installation-id, private-key]
+            access: read
+            delivery: env
+            rotation: { tolerates: restart }
+        probes:
+          readiness: { path: /readyz, port: 8080 }
+          # Whether a pass succeeded within twice its interval: a Reporter that stopped
+          # succeeding is restarted.
+          liveness: { path: /fresh, port: 8080 }
+        startupBudget: 10s
+        # It holds nothing a restart loses: it reads where every Rollout stands again.
         cutover: interrupted

@@ -24,15 +24,17 @@ func file(t *testing.T, server *githubtest.Server) githubapp.File {
 		t.Fatal(err)
 	}
 	return githubapp.File{
-		API:            server.URL + "/",
-		Repository:     githubtest.Repository,
-		Path:           githubtest.Path,
-		Branch:         githubtest.Branch,
-		AppID:          githubtest.AppID,
-		InstallationID: githubtest.InstallationID,
-		Key:            key,
-		HTTP:           server.Client(),
-		Now:            time.Now,
+		App: githubapp.App{
+			API:            server.URL + "/",
+			AppID:          githubtest.AppID,
+			InstallationID: githubtest.InstallationID,
+			Key:            key,
+			HTTP:           server.Client(),
+			Now:            time.Now,
+		},
+		Repository: githubtest.Repository,
+		Path:       githubtest.Path,
+		Branch:     githubtest.Branch,
 	}
 }
 

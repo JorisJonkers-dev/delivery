@@ -1,0 +1,167 @@
+// Command reporter keeps every Rollout's GitHub Deployment current: when it starts, on every
+// event Flux posts it, and once every interval, it reads each unit that carries a Rollout and
+// writes the stage the cluster shows it at. It keeps running, and answers whether a pass
+// succeeded lately.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
+	"github.com/JorisJonkers-dev/delivery/internal/githubapp"
+	"github.com/JorisJonkers-dev/delivery/internal/loop"
+	"github.com/JorisJonkers-dev/delivery/internal/reporter"
+	"github.com/JorisJonkers-dev/delivery/internal/server"
+)
+
+// version is set at build time with -ldflags "-X main.version=…".
+var version = "dev"
+
+const (
+	defaultAPI       = "https://api.github.com"
+	defaultAddr      = ":8080"
+	defaultNamespace = "flux-system"
+	// Flagger moves a Canary on its own analysis interval and sends the Reporter nothing, so the
+	// Reporter looks at least this often.
+	defaultInterval = 30 * time.Second
+)
+
+func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		logger.Error("reporter is not running in a cluster", "error", err)
+		return 1
+	}
+	return start(context.Background(), logger, os.Getenv, os.ReadFile, config)
+}
+
+// start is main minus the cluster it runs in, so tests can hand it one.
+func start(parent context.Context, logger *slog.Logger, getenv func(string) string, readFile func(string) ([]byte, error), config *rest.Config) int {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	r, err := configure(logger, getenv, readFile, config)
+	if err != nil {
+		logger.Error("reporter could not start", "error", err, "version", version)
+		return 1
+	}
+	interval, err := intervalOf(getenv("INTERVAL"))
+	if err != nil {
+		logger.Error("reporter could not start", "error", err, "version", version)
+		return 1
+	}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", orDefault(getenv("ADDR"), defaultAddr))
+	if err != nil {
+		logger.Error("reporter could not listen", "error", err)
+		return 1
+	}
+
+	prompts := reporter.NewPrompts()
+	passes := loop.New(r.Pass, interval, time.Now, prompts.Every, logger)
+	passed := make(chan struct{})
+	go func() {
+		passes.Run(ctx)
+		close(passed)
+	}()
+	routes := func(mux *http.ServeMux) {
+		passes.Routes(mux)
+		prompts.Routes(mux)
+	}
+	served := server.New(logger, version, routes).Serve(ctx, ln)
+	// The server stops when it is told to or when it cannot serve; either way the passes stop with it.
+	stop()
+	<-passed
+	if served != nil {
+		logger.Error("reporter stopped", "error", served)
+		return 1
+	}
+	return 0
+}
+
+// intervalOf reads how often to look: a Go duration, thirty seconds when it is not set.
+func intervalOf(value string) (time.Duration, error) {
+	if value == "" {
+		return defaultInterval, nil
+	}
+	interval, err := time.ParseDuration(value)
+	if err != nil || interval <= 0 {
+		return 0, fmt.Errorf("INTERVAL %q is not a duration above zero", value)
+	}
+	return interval, nil
+}
+
+func configure(logger *slog.Logger, getenv func(string) string, readFile func(string) ([]byte, error), config *rest.Config) (*reporter.Reporter, error) {
+	var missing []string
+	for _, name := range []string{"GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID"} {
+		if getenv(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	// The App's key arrives the way its grant is delivered: as a variable, or as a file.
+	if getenv("GITHUB_APP_PRIVATE_KEY") == "" && getenv("GITHUB_APP_PRIVATE_KEY_FILE") == "" {
+		missing = append(missing, "GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("not set: %s", strings.Join(missing, ", "))
+	}
+
+	pemBytes := []byte(getenv("GITHUB_APP_PRIVATE_KEY"))
+	if len(pemBytes) == 0 {
+		read, err := readFile(getenv("GITHUB_APP_PRIVATE_KEY_FILE"))
+		if err != nil {
+			return nil, fmt.Errorf("read the App key: %w", err)
+		}
+		pemBytes = read
+	}
+	key, err := githubapp.ParseKey(pemBytes)
+	if err != nil {
+		return nil, err
+	}
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("reach the cluster: %w", err)
+	}
+	objects, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("reach the cluster: %w", err)
+	}
+
+	return &reporter.Reporter{
+		Cluster: reporter.Kube{Client: client, Dynamic: objects, Namespace: orDefault(getenv("FLUX_NAMESPACE"), defaultNamespace)},
+		GitHub: githubapp.Deployments{App: githubapp.App{
+			API:            orDefault(getenv("GITHUB_API_URL"), defaultAPI),
+			AppID:          getenv("GITHUB_APP_ID"),
+			InstallationID: getenv("GITHUB_APP_INSTALLATION_ID"),
+			Key:            key,
+			HTTP:           &http.Client{Timeout: 30 * time.Second},
+			Now:            time.Now,
+		}},
+		Now: time.Now,
+		Log: logger,
+	}, nil
+}
+
+func orDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}

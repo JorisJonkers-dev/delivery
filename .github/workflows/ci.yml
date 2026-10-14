@@ -53,6 +53,8 @@ jobs:
             args: "--build-arg APP=release-gate"
           - image: collector
             args: "--build-arg APP=collector"
+          - image: reporter
+            args: "--build-arg APP=reporter"
           - image: vault-policy
             args: "--build-arg APP=vault-policy"
           - image: file-backup

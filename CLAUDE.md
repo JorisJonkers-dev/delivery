@@ -22,8 +22,8 @@ this file stays a pointer. Add repo-specific guidance below.
 
 ## This repository
 
-The estate's in-cluster delivery services, in Go: the Release Gate today, and the ClusterState
-Collector and the Vault policy job as their tickets land (JorisJonkers-dev/deploy-kit#195).
+The estate's in-cluster delivery services, in Go: the Release Gate, the ClusterState Collector,
+the Reporter, the Vault policy job and the backup methods (JorisJonkers-dev/deploy-kit#195).
 `task check` is everything CI runs; `task` lists the targets. The toolchain is pinned in
 `mise.toml` (`mise install`).
 

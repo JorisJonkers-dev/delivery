@@ -20,6 +20,7 @@ import (
 
 	"github.com/JorisJonkers-dev/delivery/internal/collector"
 	"github.com/JorisJonkers-dev/delivery/internal/githubapp"
+	"github.com/JorisJonkers-dev/delivery/internal/loop"
 	"github.com/JorisJonkers-dev/delivery/internal/server"
 )
 
@@ -73,13 +74,13 @@ func start(parent context.Context, logger *slog.Logger, getenv func(string) stri
 		return 1
 	}
 
-	loop := collector.NewLoop(c.Run, interval, time.Now, every, logger)
+	captures := loop.New(c.Run, interval, time.Now, every, logger)
 	captured := make(chan struct{})
 	go func() {
-		loop.Run(ctx)
+		captures.Run(ctx)
 		close(captured)
 	}()
-	served := server.New(logger, version, loop.Routes).Serve(ctx, ln)
+	served := server.New(logger, version, captures.Routes).Serve(ctx, ln)
 	// The server stops when it is told to or when it cannot serve; either way the captures stop with it.
 	stop()
 	<-captured
@@ -139,15 +140,17 @@ func configure(logger *slog.Logger, getenv func(string) string, readFile func(st
 		Name:    getenv("CLUSTER_NAME"),
 		Cluster: collector.Kube{Client: client},
 		Repository: githubapp.File{
-			API:            orDefault(getenv("GITHUB_API_URL"), defaultAPI),
-			Repository:     getenv("ESTATE_REPOSITORY"),
-			Path:           orDefault(getenv("SNAPSHOT_PATH"), defaultPath),
-			Branch:         orDefault(getenv("ESTATE_BRANCH"), defaultBranch),
-			AppID:          getenv("GITHUB_APP_ID"),
-			InstallationID: getenv("GITHUB_APP_INSTALLATION_ID"),
-			Key:            key,
-			HTTP:           &http.Client{Timeout: 30 * time.Second},
-			Now:            time.Now,
+			App: githubapp.App{
+				API:            orDefault(getenv("GITHUB_API_URL"), defaultAPI),
+				AppID:          getenv("GITHUB_APP_ID"),
+				InstallationID: getenv("GITHUB_APP_INSTALLATION_ID"),
+				Key:            key,
+				HTTP:           &http.Client{Timeout: 30 * time.Second},
+				Now:            time.Now,
+			},
+			Repository: getenv("ESTATE_REPOSITORY"),
+			Path:       orDefault(getenv("SNAPSHOT_PATH"), defaultPath),
+			Branch:     orDefault(getenv("ESTATE_BRANCH"), defaultBranch),
 		},
 		Now: time.Now,
 		Log: logger,
