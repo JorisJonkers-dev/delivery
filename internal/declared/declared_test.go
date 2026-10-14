@@ -80,7 +80,7 @@ func declared(t *testing.T) map[string][]string {
 // held is every grant the ClusterRole in a hand-kept rbac.yaml holds.
 func held(t *testing.T, service string) []string {
 	t.Helper()
-	raw, err := os.ReadFile("../../deploy/" + service + "/rbac.yaml") //nolint:gosec // G304: one of the two services this test names
+	raw, err := os.ReadFile("../../deploy/" + service + "/rbac.yaml") //nolint:gosec // G304: one of the services this test names
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func held(t *testing.T, service string) []string {
 
 func TestEachServicesRbacFileHoldsExactlyWhatItsProcessDeclares(t *testing.T) {
 	all := declared(t)
-	for _, service := range []string{"release-gate", "collector"} {
+	for _, service := range []string{"release-gate", "collector", "reporter"} {
 		t.Run(service, func(t *testing.T) {
 			if got, want := held(t, service), all[service]; !slices.Equal(got, want) {
 				t.Fatalf("deploy/%s/rbac.yaml holds\n%v\nand the project file declares\n%v", service, got, want)
@@ -115,13 +115,13 @@ func TestEachServicesRbacFileHoldsExactlyWhatItsProcessDeclares(t *testing.T) {
 }
 
 func TestEveryHolderOfApiAccessIsOneThePlatformIsAskedToAdmit(t *testing.T) {
-	// The three the README names; a fourth would need the Platform document's list to grow.
+	// The four the README names; a fifth would need the Platform document's list to grow.
 	var holders []string
 	for name := range declared(t) {
 		holders = append(holders, name)
 	}
 	slices.Sort(holders)
-	if want := []string{"collector", "flagger", "release-gate"}; !slices.Equal(holders, want) {
+	if want := []string{"collector", "flagger", "release-gate", "reporter"}; !slices.Equal(holders, want) {
 		t.Fatalf("holders = %v, want %v", holders, want)
 	}
 }

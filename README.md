@@ -9,6 +9,7 @@ Go, and the `delivery` project that deploys them. Generated from
 |---------|-------|
 | Release Gate: answers Flagger's webhooks and fails closed | answers all three, starts and undoes migrations, and logs held releases, see [The Release Gate](#the-release-gate); not deployed yet |
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
+| Reporter: keeps every Rollout's GitHub Deployment current, stage by stage | built and tested; not deployed yet, see [The Reporter](#the-reporter). Writes no warmup stage until the Release Gate warms up |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
 | Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. No off-cluster copy yet |
 
@@ -22,7 +23,11 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, the service's own routes, graceful shutdown |
 | `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
 | `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
-| `internal/githubapp/` | One file of one repository, read and written as a GitHub App installation |
+| `internal/githubapp/` | A GitHub App installation: one file of one repository, read and written, and the Deployments of every repository it is installed on |
+| `internal/loop/` | A pass at start and on an interval, and the freshness probe that says one succeeded lately: the Collector's and the Reporter's |
+| `cmd/reporter/` | The Reporter binary: a pass at start, on every event Flux posts it, and on its own interval |
+| `internal/reporter/` | The stage each Rollout is at, read from its unit, its source and its Canaries; the writes to its Deployment; and the envtest case that holds its reads and its grant |
+| `deploy/reporter/rbac.yaml` | Everything the Reporter may do in the cluster: read four kinds |
 | `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list four kinds |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
@@ -31,8 +36,9 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
 | `scripts/sync-schemas.sh` | Fetches the vendored files from deploy-kit at one release |
-| `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger, the Release Gate and the Collector, each with the Kubernetes API access it declares |
+| `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger, the Release Gate, the Collector and the Reporter, each with the Kubernetes API access it declares |
 | `deploy/env/collector/base.env` | What the Collector's Process receives: the cluster it captures, the repository it commits to, and its GitHub App |
+| `deploy/env/reporter/base.env` | What the Reporter's Process receives: Flux's namespace, and its GitHub App |
 | `internal/declared/` | The test that holds each `deploy/<service>/rbac.yaml` to the `api` block its Process declares |
 | `Taskfile.yml` | `schemas:sync`, `schemas:check`, `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
 
@@ -262,10 +268,59 @@ twice the interval and 503 after, and it is the Collector's liveness probe, so o
 succeeding is restarted and shows as restarts.
 
 The Collector is an Application of `deploy/delivery.project.yml`. Its `api` block declares the
-three kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
+four kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
 Platform document admits it; its GitHub App arrives as variables, from a grant on
 `secret/data/delivery-system/collector`. `deploy/collector/rbac.yaml` is the same grant as
 objects, which the envtest case applies.
+
+## The Reporter
+
+Every status of a Rollout after `pinned` is the Reporter's
+([deploy-kit `spec/v1/55-delivery.md`](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/55-delivery.md#rollouts)).
+The composition workflow creates the GitHub Deployment when it moves a Project's pin, and the
+pin source carries the same Rollout as annotations on the Project's unit. The Reporter reads
+that unit, and writes to the Deployment where the stage moved.
+
+A pass runs when the Reporter starts, on every event Flux's Provider posts to `POST /flux`, and
+once every `INTERVAL`. An event is a prompt to look and never evidence: the route is unsigned, so
+the Reporter reads nothing from it, not even the unit it names, and reads every unit again. A
+forged event costs one pass and writes nothing; a dropped one delays a status by an interval at
+most. Flagger sends the Reporter nothing, so the interval is also how often a Canary's progress
+is seen.
+
+| stage | written when the cluster shows |
+|---|---|
+| `in_progress`: applied by Flux; then each member that is not through, `checks n/m`, `waits for the other members`, `promoting` or `waits for Flagger` | the unit's last applied revision is the digest its source is pinned to, and a blue-green member has not finished |
+| `success`: `<project> <version> applied by Flux and ready` | the release is applied and the unit has no blue-green member |
+| `success`: `<project> <version> promoted` | every member's Canary is settled and its primary serves what its Deployment holds: promoted in this release, or unchanged by it, the same test the Release Gate's barrier makes |
+| `failure`: `<member> rolled back: <Flagger's message>` | a member's Canary failed after the Deployment was created |
+| `failure`: `Flux could not apply <project> <version>: <reason>: <message>` | the unit is not Ready on this release for any reason but waiting on another unit. Flux retries, so a `success` may follow |
+
+A status is written only when it differs from the Deployment's latest, so a Reporter that
+restarts writes nothing twice. A Deployment whose latest status is `success`, `inactive` (a later
+release superseded it) or `error` takes nothing more. A Deployment is the Rollout's only when its
+payload names the unit's Project and version, so a Project released from the same repository as
+another never takes the other's status. Each status keeps the run link the workflow gave the
+first one, and names the Rollout's URL as the environment URL where it has one.
+
+| variable | value |
+|---|---|
+| `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID` | the Reporter's App, `deployments: write` and nothing else, and its installation on every repository that releases to the estate |
+| `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_FILE` | the App's private key, as the Secret Store delivers it: a variable, or a file |
+| `FLUX_NAMESPACE` | where the units are; `flux-system` when it is not set |
+| `INTERVAL` | how often to look, a Go duration; thirty seconds when it is not set |
+| `ADDR` | where it serves `/flux` and its probes; `:8080` when it is not set |
+
+`GET /fresh` answers 200 while a pass succeeded within twice the interval, and is the
+Reporter's liveness probe, as it is the Collector's.
+
+The Reporter is an Application of `deploy/delivery.project.yml`, beside the Release Gate, which
+the Platform document's `delivery.reporter` requires. Its `api` block declares its four reads:
+Kustomizations listed, each one's OCIRepository, the Canaries the unit's inventory names, and a
+settled member's Deployment and primary. deploy-kit renders that into its ClusterRole once the
+Platform document admits it; its GitHub App arrives as variables, from a grant on
+`secret/data/delivery-system/reporter`. `deploy/reporter/rbac.yaml` is the same grant as objects,
+which the envtest case applies.
 
 ## Run it
 
@@ -275,10 +330,11 @@ task check      # lint, schemas:check, gen:check, tests with coverage, build, se
 docker build --build-arg APP=release-gate -t release-gate .
 docker build --build-arg APP=vault-policy -t vault-policy .
 docker build --build-arg APP=collector -t collector .
+docker build --build-arg APP=reporter -t reporter .
 docker build --file backup.Dockerfile --target file-backup -t file-backup .
 ```
 
 `task test` fails below 80% statement coverage of hand-written code (`COVERAGE_MIN` in
 `Taskfile.yml`); generated files and the fake GitHub the tests run against are left out of that
-figure. The Collector's envtest case starts a real API server, which `task test` fetches once
+figure. The Collector's and the Reporter's envtest cases start a real API server, which `task test` fetches once
 through `setup-envtest`.

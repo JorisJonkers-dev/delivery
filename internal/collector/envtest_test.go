@@ -115,9 +115,11 @@ func TestTheCollectorInACluster(t *testing.T) {
 		Name:    "production",
 		Cluster: collector.Kube{Client: restricted},
 		Repository: githubapp.File{
-			API: github.URL, Repository: githubtest.Repository, Path: githubtest.Path, Branch: githubtest.Branch,
-			AppID: githubtest.AppID, InstallationID: githubtest.InstallationID, Key: key,
-			HTTP: github.Client(), Now: time.Now,
+			App: githubapp.App{
+				API: github.URL, AppID: githubtest.AppID, InstallationID: githubtest.InstallationID, Key: key,
+				HTTP: github.Client(), Now: time.Now,
+			},
+			Repository: githubtest.Repository, Path: githubtest.Path, Branch: githubtest.Branch,
 		},
 		Now: func() time.Time { return now },
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),

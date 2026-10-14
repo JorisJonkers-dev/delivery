@@ -1,5 +1,6 @@
-// Package githubapp reads and writes one file of one repository as a GitHub App installation:
-// the Collector's whole reach outside the cluster.
+// Package githubapp signs in as a GitHub App installation, and does the two things the estate's
+// services do there: the Collector reads and writes one file of one repository, and the Reporter
+// keeps Deployments current.
 package githubapp
 
 import (
@@ -18,18 +19,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
 
-// File is one file on one branch of one repository, written as an App installation.
-type File struct {
+// App is one installation of a GitHub App, and what it signs in with.
+type App struct {
 	// API is GitHub's API root, https://api.github.com.
 	API string
-	// Repository is owner/name.
-	Repository string
-	Path       string
-	Branch     string
 
 	AppID          string
 	InstallationID string
@@ -37,6 +35,15 @@ type File struct {
 
 	HTTP *http.Client
 	Now  func() time.Time
+}
+
+// File is one file on one branch of one repository, written as an App installation.
+type File struct {
+	App
+	// Repository is owner/name.
+	Repository string
+	Path       string
+	Branch     string
 }
 
 // ParseKey reads the App's private key, in either PEM form GitHub and OpenSSL write.
@@ -71,7 +78,7 @@ func (f File) Snapshot(ctx context.Context) ([]byte, string, error) {
 		SHA      string `json:"sha"`
 	}
 	target := f.contents() + "?ref=" + url.QueryEscape(f.Branch)
-	if err := f.do(ctx, http.MethodGet, target, "Bearer "+token, nil, http.StatusOK, &content); err != nil {
+	if err := f.do(ctx, http.MethodGet, target, "Bearer "+token, nil, &content, http.StatusOK); err != nil {
 		return nil, "", fmt.Errorf("read %s: %w", f.Path, err)
 	}
 	if content.Encoding != "base64" {
@@ -100,27 +107,30 @@ func (f File) Commit(ctx context.Context, document []byte, revision, message str
 	if err != nil {
 		return err
 	}
-	if err := f.do(ctx, http.MethodPut, f.contents(), "Bearer "+token, body, http.StatusOK, nil); err != nil {
+	// A commit that creates nothing new answers 200; one that creates the file answers 201.
+	if err := f.do(ctx, http.MethodPut, f.contents(), "Bearer "+token, body, nil, http.StatusOK, http.StatusCreated); err != nil {
 		return fmt.Errorf("write %s: %w", f.Path, err)
 	}
 	return nil
 }
 
 func (f File) contents() string {
-	return fmt.Sprintf("%s/repos/%s/contents/%s", strings.TrimRight(f.API, "/"), f.Repository, f.Path)
+	return fmt.Sprintf("%s/repos/%s/contents/%s", f.root(), f.Repository, f.Path)
 }
 
+func (a App) root() string { return strings.TrimRight(a.API, "/") }
+
 // token trades a short-lived App assertion for an installation token.
-func (f File) token(ctx context.Context) (string, error) {
-	assertion, err := f.assertion()
+func (a App) token(ctx context.Context) (string, error) {
+	assertion, err := a.assertion()
 	if err != nil {
 		return "", err
 	}
 	var granted struct {
 		Token string `json:"token"`
 	}
-	target := fmt.Sprintf("%s/app/installations/%s/access_tokens", strings.TrimRight(f.API, "/"), url.PathEscape(f.InstallationID))
-	if err := f.do(ctx, http.MethodPost, target, "Bearer "+assertion, nil, http.StatusCreated, &granted); err != nil {
+	target := fmt.Sprintf("%s/app/installations/%s/access_tokens", a.root(), url.PathEscape(a.InstallationID))
+	if err := a.do(ctx, http.MethodPost, target, "Bearer "+assertion, nil, &granted, http.StatusCreated); err != nil {
 		return "", fmt.Errorf("sign in as the App: %w", err)
 	}
 	if granted.Token == "" {
@@ -131,16 +141,16 @@ func (f File) token(ctx context.Context) (string, error) {
 
 // assertion is the RS256 JWT GitHub accepts from an App: issued a minute ago, to allow for a
 // clock that runs ahead, and good for nine minutes, under GitHub's limit of ten.
-func (f File) assertion() (string, error) {
-	now := f.Now()
+func (a App) assertion() (string, error) {
+	now := a.Now()
 	header := encode(map[string]any{"alg": "RS256", "typ": "JWT"})
 	claims := encode(map[string]any{
-		"iss": f.AppID,
+		"iss": a.AppID,
 		"iat": now.Add(-time.Minute).Unix(),
 		"exp": now.Add(9 * time.Minute).Unix(),
 	})
 	digest := sha256.Sum256([]byte(header + "." + claims))
-	signature, err := rsa.SignPKCS1v15(rand.Reader, f.Key, crypto.SHA256, digest[:])
+	signature, err := rsa.SignPKCS1v15(rand.Reader, a.Key, crypto.SHA256, digest[:])
 	if err != nil {
 		return "", fmt.Errorf("sign the App assertion: %w", err)
 	}
@@ -153,7 +163,8 @@ func encode(value map[string]any) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func (f File) do(ctx context.Context, method, target, authorization string, body []byte, want int, into any) error {
+// do sends one request, and reads the answer into into where it is one of want.
+func (a App) do(ctx context.Context, method, target, authorization string, body []byte, into any, want ...int) error {
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -161,7 +172,7 @@ func (f File) do(ctx context.Context, method, target, authorization string, body
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	res, err := f.HTTP.Do(req)
+	res, err := a.HTTP.Do(req)
 	if err != nil {
 		return err
 	}
@@ -171,8 +182,7 @@ func (f File) do(ctx context.Context, method, target, authorization string, body
 	if err != nil {
 		return err
 	}
-	// A commit that creates nothing new still answers 200; one that creates the file answers 201.
-	if res.StatusCode != want && (method != http.MethodPut || res.StatusCode != http.StatusCreated) {
+	if !slices.Contains(want, res.StatusCode) {
 		return errors.New(res.Status)
 	}
 	if into == nil {

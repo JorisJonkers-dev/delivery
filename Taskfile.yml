@@ -4,8 +4,9 @@ version: "3"
 vars:
   # Every command this repository builds. Each but backup is its own image, built with
   # --build-arg APP=<name>; backup is three, the targets of backup.Dockerfile.
-  APPS: release-gate collector vault-policy backup
-  # The Kubernetes control plane the envtest cases run against: the Collector's and the Release Gate's.
+  APPS: release-gate collector reporter vault-policy backup
+  # The Kubernetes control plane the envtest cases run against: the Collector's, the Release Gate's
+  # and the Reporter's.
   ENVTEST_KUBERNETES: 1.36.2
   COVERAGE_MIN: 80
   # The deploy-kit release the vendored schemas come from, by the commit its tag names: a tag can
