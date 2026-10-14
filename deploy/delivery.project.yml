@@ -51,6 +51,12 @@ applications:
             - group: flagger.app
               objects: [canaries, canaries/status]
               verbs: [get, list, watch, update, patch]
+            # Flagger lists both at start and exits when it cannot (2026-10-14:
+            # "metrictemplates.flagger.app is forbidden: ... cannot list resource
+            # \"metrictemplates\""). It reads them, never writes them.
+            - group: flagger.app
+              objects: [metrictemplates, alertproviders]
+              verbs: [get, list, watch]
             # No `delete` on anything: what Flagger makes it makes as the Canary's own, and the
             # cluster collects it with the Canary. A verb a running Flagger turns out to need is
             # added here with the refusal that shows it.
