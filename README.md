@@ -111,7 +111,15 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   ServiceAccount. Anyone else gets one `403`
   whatever they ask, before anything of the request or the cluster is read. A forwarded-for
   header is not read. The `delivery` project's derived policy says the same at the network:
-  Flagger's edge to the gate is the only one declared.
+  Flagger's edge to the gate is the only one declared for its webhooks.
+- **It serves what it holds, read-only, at `GET /releases`.** For every gated Application,
+  ordered by namespace and Application: its members and its migration, from the release-gate
+  inputs, and its record (`serving`, `pinned`, `since`). An Application whose inputs or record do
+  not read says so in `unreadable` and keeps the rest from failing with it. A thousand
+  Applications at most, with `truncated` set beyond that. This is how the estate dashboard reads
+  both without any ConfigMap access of its own (JorisJonkers-dev/estate-dashboard#15): it declares
+  an edge to the gate's `http` surface, which its derived policy then admits. Reading it starts
+  and writes nothing, so it checks no caller.
 - **It answers only at the revision the asking member's Canary carries.** A question about a
   render that has been replaced, or about a Canary that is not there, is refused, and the two
   read the same.

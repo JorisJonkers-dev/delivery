@@ -73,6 +73,9 @@ func (k Kube) Flagger(ctx context.Context) ([]string, error) {
 // Inputs implements Cluster.
 func (k Kube) Inputs(ctx context.Context, namespace, application string) (string, error) {
 	cm, err := k.Client.CoreV1().ConfigMaps(namespace).Get(ctx, InputsName(application), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("%w: %w", ErrNoInputs, err)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +196,14 @@ func RecordName(namespace, application string) string {
 // delivery project derives, so that no Application can write what the gate decides from.
 const RecordNamespace = flaggerNamespace
 
-var errAnotherNamespace = errors.New("gate: the release record names another namespace")
+// ErrForeignRecord is the error Cluster.Record wraps where the ConfigMap under the record's name
+// is not one the gate wrote for the Application: it names another namespace, or does not parse.
+var ErrForeignRecord = errors.New("gate: not a release record the gate wrote for this Application")
+
+var (
+	errAnotherNamespace = fmt.Errorf("%w: it names another namespace", ErrForeignRecord)
+	errUnparsedRecord   = fmt.Errorf("%w: it does not parse", ErrForeignRecord)
+)
 
 // Record implements Cluster. A record that names another namespace than the one asked about is
 // not this Application's, and the gate cannot answer from it.
@@ -207,7 +217,7 @@ func (k Kube) Record(ctx context.Context, namespace, application string) (Record
 	}
 	var record Record
 	if err := json.Unmarshal([]byte(cm.Data[RecordKey]), &record); err != nil {
-		return Record{}, fmt.Errorf("gate: ConfigMap %s/%s does not parse: %w", RecordNamespace, cm.Name, err)
+		return Record{}, fmt.Errorf("%w: ConfigMap %s/%s: %w", errUnparsedRecord, RecordNamespace, cm.Name, err)
 	}
 	if record.Namespace != namespace {
 		return Record{}, errAnotherNamespace

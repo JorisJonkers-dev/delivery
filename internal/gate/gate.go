@@ -163,6 +163,10 @@ var errNotAMember = errors.New("gate: the Process is no member of the Applicatio
 // ErrNoCanary is what Cluster.Canary returns for a Canary that is not there.
 var ErrNoCanary = errors.New("gate: no such Canary")
 
+// ErrNoInputs is the error Cluster.Inputs wraps where the Application carries no release-gate
+// inputs.
+var ErrNoInputs = errors.New("gate: no release-gate inputs")
+
 // reading is what every answer starts from: the Application's release-gate inputs, of which the
 // asking Process is a member, and that member's Canary.
 type reading struct {

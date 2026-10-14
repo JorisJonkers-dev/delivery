@@ -106,8 +106,8 @@ func TestARecordIsNeverClaimedOrWrittenOverFromAnotherNamespace(t *testing.T) {
 		"not JSON":          "{",
 	} {
 		k := kube([]runtime.Object{configMap(gate.RecordNamespace, "auth-system.auth-release-record", nil, map[string]string{"record.json": planted})})
-		if _, err := k.Record(t.Context(), ns, "auth"); err == nil || errors.Is(err, gate.ErrNoRecord) {
-			t.Fatalf("%s: read as auth's", name)
+		if _, err := k.Record(t.Context(), ns, "auth"); !errors.Is(err, gate.ErrForeignRecord) {
+			t.Fatalf("%s: read as auth's: %v", name, err)
 		}
 		if err := k.SetRecord(t.Context(), ns, "auth", gate.Record{Serving: revision}); err == nil {
 			t.Fatalf("%s: written over", name)
