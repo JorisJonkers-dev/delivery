@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.5.0...v0.6.0) (2026-10-14)
+
+
+### Features
+
+* **gate:** serve every gated Application's inputs and record at GET /releases ([#48](https://github.com/JorisJonkers-dev/delivery/issues/48)) ([c51bece](https://github.com/JorisJonkers-dev/delivery/commit/c51becef90eb4335acc3c7ab9f8af0c49a27536d))
+
 ## [0.5.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.4.0...v0.5.0) (2026-10-14)
 
 
