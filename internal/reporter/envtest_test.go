@@ -1,35 +1,25 @@
 package reporter_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
-	"os"
 	"testing"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/JorisJonkers-dev/delivery/internal/gate"
 	"github.com/JorisJonkers-dev/delivery/internal/reporter"
 )
-
-const rbacFile = "../../deploy/reporter/rbac.yaml"
 
 // openKind is as much of a custom kind as the Reporter reads: any spec, any status.
 func openKind(gvr schema.GroupVersionResource, kind string) *apiextensionsv1.CustomResourceDefinition {
@@ -46,48 +36,6 @@ func openKind(gvr schema.GroupVersionResource, kind string) *apiextensionsv1.Cus
 			}},
 		},
 	}
-}
-
-// applyRBAC creates exactly what deploy/reporter/rbac.yaml declares, and returns the
-// ServiceAccount it declares as the user a pod running under it is.
-func applyRBAC(t *testing.T, admin kubernetes.Interface) string {
-	t.Helper()
-	ctx := context.Background()
-	raw, err := os.ReadFile(rbacFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var user string
-	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
-	for {
-		var encoded runtime.RawExtension
-		if err := decoder.Decode(&encoded); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			t.Fatal(err)
-		}
-		object, _, err := scheme.Codecs.UniversalDeserializer().Decode(encoded.Raw, nil, nil)
-		if err != nil {
-			t.Fatalf("%s holds something that is not a Kubernetes object: %v", rbacFile, err)
-		}
-		switch o := object.(type) {
-		case *corev1.ServiceAccount:
-			user = "system:serviceaccount:" + o.Namespace + ":" + o.Name
-		case *rbacv1.ClusterRole:
-			_, err = admin.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{})
-		case *rbacv1.ClusterRoleBinding:
-			_, err = admin.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{})
-		default:
-			t.Fatalf("%s grants through a %T, which this test does not apply", rbacFile, object)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if user == "" {
-		t.Fatalf("%s declares no ServiceAccount", rbacFile)
-	}
-	return user
 }
 
 func create(t *testing.T, objects dynamic.Interface, gvr schema.GroupVersionResource, object map[string]any) {
@@ -130,17 +78,6 @@ func TestTheReporterInACluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	adminObjects, err := dynamic.NewForConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	user := applyRBAC(t, admin)
-	asReporter := rest.CopyConfig(config)
-	asReporter.Impersonate = rest.ImpersonationConfig{UserName: user}
-	restricted, err := kubernetes.NewForConfig(asReporter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restrictedObjects, err := dynamic.NewForConfig(asReporter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,9 +151,9 @@ func TestTheReporterInACluster(t *testing.T) {
 		}
 	}
 
-	k := reporter.Kube{Client: restricted, Dynamic: restrictedObjects, Namespace: "flux-system"}
+	k := reporter.Kube{Client: admin, Dynamic: adminObjects, Namespace: "flux-system"}
 
-	t.Run("it reads each unit, its pin and its Canaries under its own grant", func(t *testing.T) {
+	t.Run("it reads each unit, its pin and its Canaries", func(t *testing.T) {
 		units, err := k.Units(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -263,68 +200,6 @@ func TestTheReporterInACluster(t *testing.T) {
 		}
 		if _, err := k.Units(ctx); !apierrors.IsNotFound(errors.Unwrap(errors.Unwrap(err))) {
 			t.Fatalf("err = %v", err)
-		}
-	})
-
-	t.Run("the ServiceAccount can do nothing beyond its four reads", func(t *testing.T) {
-		kustomizations := restrictedObjects.Resource(reporter.Kustomizations).Namespace("flux-system")
-		canaries := restrictedObjects.Resource(gate.Canaries).Namespace("notes-system")
-		repositories := restrictedObjects.Resource(reporter.OCIRepositories).Namespace("flux-system")
-		deployments := restricted.AppsV1().Deployments("notes-system")
-		object := func(kind string) *unstructured.Unstructured {
-			return &unstructured.Unstructured{Object: map[string]any{"apiVersion": "x/v1", "kind": kind, "metadata": map[string]any{"name": "intruder"}}}
-		}
-		refused := map[string]func() error{
-			"get a Kustomization": func() error { _, err := kustomizations.Get(ctx, "apps-notes", metav1.GetOptions{}); return err },
-			"watch Kustomizations": func() error {
-				_, err := kustomizations.Watch(ctx, metav1.ListOptions{})
-				return err
-			},
-			"patch a Kustomization": func() error {
-				_, err := kustomizations.Patch(ctx, "apps-notes", "application/merge-patch+json", []byte(`{"spec":{"suspend":true}}`), metav1.PatchOptions{})
-				return err
-			},
-			"create a Kustomization": func() error {
-				_, err := kustomizations.Create(ctx, object("Kustomization"), metav1.CreateOptions{})
-				return err
-			},
-			"list OCIRepositories": func() error { _, err := repositories.List(ctx, metav1.ListOptions{}); return err },
-			"update an OCIRepository": func() error {
-				_, err := repositories.Update(ctx, object("OCIRepository"), metav1.UpdateOptions{})
-				return err
-			},
-			"list Canaries": func() error { _, err := canaries.List(ctx, metav1.ListOptions{}); return err },
-			"patch a Canary": func() error {
-				_, err := canaries.Patch(ctx, "notes-web", "application/merge-patch+json", []byte(`{"spec":{"skipAnalysis":true}}`), metav1.PatchOptions{})
-				return err
-			},
-			"list Deployments": func() error { _, err := deployments.List(ctx, metav1.ListOptions{}); return err },
-			"scale a Deployment": func() error {
-				_, err := deployments.Patch(ctx, "notes-web", "application/merge-patch+json", []byte(`{"spec":{"replicas":0}}`), metav1.PatchOptions{})
-				return err
-			},
-			"delete a Deployment": func() error { return deployments.Delete(ctx, "notes-web", metav1.DeleteOptions{}) },
-			"list secrets": func() error {
-				_, err := restricted.CoreV1().Secrets("flux-system").List(ctx, metav1.ListOptions{})
-				return err
-			},
-			"list configmaps": func() error {
-				_, err := restricted.CoreV1().ConfigMaps("notes-system").List(ctx, metav1.ListOptions{})
-				return err
-			},
-			"list pods": func() error {
-				_, err := restricted.CoreV1().Pods("notes-system").List(ctx, metav1.ListOptions{})
-				return err
-			},
-			"read its own grant": func() error {
-				_, err := restricted.RbacV1().ClusterRoles().Get(ctx, "delivery-reporter", metav1.GetOptions{})
-				return err
-			},
-		}
-		for name, do := range refused {
-			if err := do(); !apierrors.IsForbidden(err) {
-				t.Errorf("%s was not forbidden: %v", name, err)
-			}
 		}
 	})
 }

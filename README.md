@@ -19,16 +19,13 @@ Go, and the `delivery` project that deploys them. Generated from
 |------|------------|
 | `cmd/release-gate/` | The Release Gate binary: reads `ADDR` (default `:8080`) and the cluster it runs in, logs JSON with `slog`, drains on `SIGTERM` |
 | `internal/gate/` | The gate's three answers, the webhooks that carry them, what it does between questions (`tend.go`), and how it reads the cluster |
-| `deploy/release-gate/rbac.yaml` | Everything the Release Gate may do in the cluster: read five kinds, write ConfigMaps for its release record, and patch a Job to start it |
 | `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, the service's own routes, graceful shutdown |
 | `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
-| `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that holds its reads and its grant |
+| `internal/collector/` | What the Collector captures, the snapshot it writes, and the envtest case that runs it against a cluster |
 | `internal/githubapp/` | A GitHub App installation: one file of one repository, read and written, and the Deployments of every repository it is installed on |
 | `internal/loop/` | A pass at start and on an interval, and the freshness probe that says one succeeded lately: the Collector's and the Reporter's |
 | `cmd/reporter/` | The Reporter binary: a pass at start, on every event Flux posts it, and on its own interval |
-| `internal/reporter/` | The stage each Rollout is at, read from its unit, its source and its Canaries; the writes to its Deployment; and the envtest case that holds its reads and its grant |
-| `deploy/reporter/rbac.yaml` | Everything the Reporter may do in the cluster: read four kinds |
-| `deploy/collector/rbac.yaml` | Everything the Collector may do in the cluster: get and list four kinds |
+| `internal/reporter/` | The stage each Rollout is at, read from its unit, its source and its Canaries; the writes to its Deployment; and the envtest case that runs it against a cluster |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
 | `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN` and a Rollback's copies by age, and what each method writes: a gzipped tar of `/data`, a gzipped `pg_dumpall`, the broker's definitions |
@@ -39,7 +36,6 @@ Go, and the `delivery` project that deploys them. Generated from
 | `deploy/delivery.project.yml` | The `delivery` project's deploy-kit Project Intent: Flagger, the Release Gate, the Collector and the Reporter, each with the Kubernetes API access it declares |
 | `deploy/env/collector/base.env` | What the Collector's Process receives: the cluster it captures, the repository it commits to, and its GitHub App |
 | `deploy/env/reporter/base.env` | What the Reporter's Process receives: Flux's namespace, and its GitHub App |
-| `internal/declared/` | The test that holds each `deploy/<service>/rbac.yaml` to the `api` block its Process declares |
 | `Taskfile.yml` | `schemas:sync`, `schemas:check`, `gen`, `gen:check`, `lint`, `test`, `build`, `secrets`, and `check` (everything CI runs) |
 
 The rest (`.golangci.yml`, the workflows, release-please) is `template-go`'s, unchanged but for
@@ -196,8 +192,6 @@ place since is not the one started. A record is named for the namespace as well 
 so inputs under one Application id elsewhere can neither claim it first nor write over it: they
 are tended as their own namespace's, and silence nothing of this one. The `api` block of its Process in `deploy/delivery.project.yml` declares the grant, and
 deploy-kit renders the ClusterRole, its binding and the token from that.
-[`deploy/release-gate/rbac.yaml`](deploy/release-gate/rbac.yaml) is the same grant as objects,
-and `internal/gate/envtest_test.go` runs the gate under exactly that grant.
 
 ## The Vault policy job
 
@@ -280,8 +274,7 @@ succeeding is restarted and shows as restarts.
 The Collector is an Application of `deploy/delivery.project.yml`. Its `api` block declares the
 four kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
 Platform document admits it; its GitHub App arrives as variables, from a grant on
-`secret/data/delivery-system/collector`. `deploy/collector/rbac.yaml` is the same grant as
-objects, which the envtest case applies.
+`secret/data/delivery-system/collector`.
 
 ## The Reporter
 
@@ -329,8 +322,7 @@ the Platform document's `delivery.reporter` requires. Its `api` block declares i
 Kustomizations listed, each one's OCIRepository, the Canaries the unit's inventory names, and a
 settled member's Deployment and primary. deploy-kit renders that into its ClusterRole once the
 Platform document admits it; its GitHub App arrives as variables, from a grant on
-`secret/data/delivery-system/reporter`. `deploy/reporter/rbac.yaml` is the same grant as objects,
-which the envtest case applies.
+`secret/data/delivery-system/reporter`.
 
 ## Run it
 

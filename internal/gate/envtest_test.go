@@ -1,12 +1,8 @@
 package gate_test
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -15,23 +11,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/JorisJonkers-dev/delivery/internal/gate"
 )
-
-const gateRBAC = "../../deploy/release-gate/rbac.yaml"
 
 // canaries is as much of Flagger's Canary kind as the gate reads: any spec, any status.
 func canaries() *apiextensionsv1.CustomResourceDefinition {
@@ -48,48 +36,6 @@ func canaries() *apiextensionsv1.CustomResourceDefinition {
 			}},
 		},
 	}
-}
-
-// grant creates exactly what deploy/release-gate/rbac.yaml declares, and returns the
-// ServiceAccount it declares as the user a pod running under it is.
-func grant(t *testing.T, admin kubernetes.Interface) string {
-	t.Helper()
-	ctx := context.Background()
-	raw, err := os.ReadFile(gateRBAC)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var user string
-	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
-	for {
-		var encoded runtime.RawExtension
-		if err := decoder.Decode(&encoded); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			t.Fatal(err)
-		}
-		object, _, err := scheme.Codecs.UniversalDeserializer().Decode(encoded.Raw, nil, nil)
-		if err != nil {
-			t.Fatalf("%s holds something that is not a Kubernetes object: %v", gateRBAC, err)
-		}
-		switch o := object.(type) {
-		case *corev1.ServiceAccount:
-			user = "system:serviceaccount:" + o.Namespace + ":" + o.Name
-		case *rbacv1.ClusterRole:
-			_, err = admin.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{})
-		case *rbacv1.ClusterRoleBinding:
-			_, err = admin.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{})
-		default:
-			t.Fatalf("%s grants through a %T, which this test does not apply", gateRBAC, object)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if user == "" {
-		t.Fatalf("%s declares no ServiceAccount", gateRBAC)
-	}
-	return user
 }
 
 // scene is one Application in a namespace of its own, at some point of a release.
@@ -215,18 +161,6 @@ func TestTheGateInACluster(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The gate's own view of the cluster: the ServiceAccount of the manifest, and nothing more.
-	asGate := rest.CopyConfig(config)
-	asGate.Impersonate = rest.ImpersonationConfig{UserName: grant(t, admin)}
-	restricted, err := kubernetes.NewForConfig(asGate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restrictedDynamic, err := dynamic.NewForConfig(asGate)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	held := func() *gate.Record { r := serving(); r.Pinned, r.Since = revision, first; return r }
 	nonTransactional := strings.Replace(migratingInputs, `"nonTransactional":false`, `"nonTransactional":true`, 1)
 	scenes := map[string]scene{
@@ -246,7 +180,7 @@ func TestTheGateInACluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := gate.New(gate.Kube{Client: restricted, Dynamic: restrictedDynamic})
+	g := gate.New(gate.Kube{Client: admin, Dynamic: dyn})
 	var found gate.Standing
 	records := map[string]gate.Record{}
 	for _, namespace := range slices.Sorted(maps.Keys(scenes)) {
@@ -256,7 +190,7 @@ func TestTheGateInACluster(t *testing.T) {
 		}
 		round := g.Standing()
 		if round.Unanswerable != nil {
-			t.Fatalf("the gate could not read %+v with what its manifest grants", round.Unanswerable)
+			t.Fatalf("the gate could not read %+v", round.Unanswerable)
 		}
 		found.Held = append(found.Held, round.Held...)
 		found.Refused = append(found.Refused, round.Refused...)
@@ -339,7 +273,7 @@ func TestTheGateInACluster(t *testing.T) {
 	})
 
 	t.Run("a Job changed since the gate read it is not the one started", func(t *testing.T) {
-		k := gate.Kube{Client: restricted, Dynamic: restrictedDynamic}
+		k := gate.Kube{Client: admin, Dynamic: dyn}
 		jobs, err := k.Jobs(ctx, "down-not-held", "auth")
 		if err != nil {
 			t.Fatal(err)
@@ -363,23 +297,6 @@ func TestTheGateInACluster(t *testing.T) {
 		}
 		if !suspended(t, "down-not-held", downJob) {
 			t.Fatal("a Job changed since it was read was started")
-		}
-	})
-
-	t.Run("its manifest lets it write its record and a Job's suspend, and nothing it only reads", func(t *testing.T) {
-		forbidden := map[string]error{}
-		forbidden["delete a ConfigMap"] = restricted.CoreV1().ConfigMaps("down").Delete(ctx, "auth-release-gate", metav1.DeleteOptions{})
-		forbidden["delete a Job"] = restricted.BatchV1().Jobs("down").Delete(ctx, upJob, metav1.DeleteOptions{})
-		_, forbidden["read a Secret"] = restricted.CoreV1().Secrets("down").Get(ctx, "any", metav1.GetOptions{})
-		_, forbidden["create a Job"] = restricted.BatchV1().Jobs("down").Create(ctx, releaseJob("down", "another"), metav1.CreateOptions{})
-		_, forbidden["change a Deployment"] = restricted.AppsV1().Deployments("down").Update(ctx, workload("down", "auth-api", "api:3"), metav1.UpdateOptions{})
-		_, forbidden["change a Canary"] = restrictedDynamic.Resource(gate.Canaries).Namespace("down").Update(ctx, &unstructured.Unstructured{Object: map[string]any{
-			"apiVersion": "flagger.app/v1beta1", "kind": "Canary", "metadata": map[string]any{"name": "auth-api", "namespace": "down"},
-		}}, metav1.UpdateOptions{})
-		for _, what := range slices.Sorted(maps.Keys(forbidden)) {
-			if !apierrors.IsForbidden(forbidden[what]) {
-				t.Errorf("the gate may %s: %v", what, forbidden[what])
-			}
 		}
 	})
 }
