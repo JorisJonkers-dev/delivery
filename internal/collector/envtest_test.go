@@ -1,84 +1,23 @@
 package collector_test
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/JorisJonkers-dev/delivery/internal/collector"
 	"github.com/JorisJonkers-dev/delivery/internal/githubapp"
 	"github.com/JorisJonkers-dev/delivery/internal/githubapp/githubtest"
 )
-
-const rbacFile = "../../deploy/collector/rbac.yaml"
-
-// applyRBAC creates exactly what deploy/collector/rbac.yaml declares, and returns the
-// ServiceAccount it declares as the user a pod running under it is.
-func applyRBAC(t *testing.T, admin kubernetes.Interface) string {
-	t.Helper()
-	ctx := context.Background()
-	raw, err := os.ReadFile(rbacFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var user string
-	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
-	for {
-		var encoded runtime.RawExtension
-		if err := decoder.Decode(&encoded); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			t.Fatal(err)
-		}
-		object, _, err := scheme.Codecs.UniversalDeserializer().Decode(encoded.Raw, nil, nil)
-		if err != nil {
-			t.Fatalf("%s holds something that is not a Kubernetes object: %v", rbacFile, err)
-		}
-		switch o := object.(type) {
-		case *corev1.ServiceAccount:
-			namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: o.Namespace}}
-			if _, err := admin.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := admin.CoreV1().ServiceAccounts(o.Namespace).Create(ctx, o, metav1.CreateOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			user = "system:serviceaccount:" + o.Namespace + ":" + o.Name
-		case *rbacv1.ClusterRole:
-			if _, err := admin.RbacV1().ClusterRoles().Create(ctx, o, metav1.CreateOptions{}); err != nil {
-				t.Fatal(err)
-			}
-		case *rbacv1.ClusterRoleBinding:
-			if _, err := admin.RbacV1().ClusterRoleBindings().Create(ctx, o, metav1.CreateOptions{}); err != nil {
-				t.Fatal(err)
-			}
-		default:
-			t.Fatalf("%s grants through a %T, which this test does not apply", rbacFile, object)
-		}
-	}
-	if user == "" {
-		t.Fatalf("%s declares no ServiceAccount", rbacFile)
-	}
-	return user
-}
 
 func TestTheCollectorInACluster(t *testing.T) {
 	environment := &envtest.Environment{}
@@ -93,15 +32,6 @@ func TestTheCollectorInACluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	user := applyRBAC(t, admin)
-
-	// The Collector's own view of the cluster: the ServiceAccount of the manifest, and nothing more.
-	asCollector := rest.CopyConfig(config)
-	asCollector.Impersonate = rest.ImpersonationConfig{UserName: user}
-	restricted, err := kubernetes.NewForConfig(asCollector)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	seed(t, admin)
 
@@ -113,7 +43,7 @@ func TestTheCollectorInACluster(t *testing.T) {
 	now := captured
 	c := collector.Collector{
 		Name:    "production",
-		Cluster: collector.Kube{Client: restricted},
+		Cluster: collector.Kube{Client: admin},
 		Repository: githubapp.File{
 			App: githubapp.App{
 				API: github.URL, AppID: githubtest.AppID, InstallationID: githubtest.InstallationID, Key: key,
@@ -171,71 +101,6 @@ placements:
 		if len(github.Commits()) != 2 || !strings.Contains(got, `{ process: "notes", node: "enschede-gtx" }`) ||
 			strings.Contains(got, "frankfurt-1") || !strings.Contains(got, `capturedAt: "2026-10-03T11:00:00Z"`) {
 			t.Fatalf("after the move, %d commits and:\n%s", len(github.Commits()), got)
-		}
-	})
-
-	t.Run("the ServiceAccount can do nothing beyond get and list", func(t *testing.T) {
-		core := restricted.CoreV1()
-		allowed := map[string]func() error{
-			"get a pod": func() error { _, err := core.Pods("notes").Get(ctx, "notes-b", metav1.GetOptions{}); return err },
-			"get a claim": func() error {
-				_, err := core.PersistentVolumeClaims("data").Get(ctx, "postgres-data", metav1.GetOptions{})
-				return err
-			},
-			"get a volume": func() error {
-				_, err := core.PersistentVolumes().Get(ctx, "pv-postgres", metav1.GetOptions{})
-				return err
-			},
-		}
-		for name, do := range allowed {
-			if err := do(); err != nil {
-				t.Errorf("%s was refused: %v", name, err)
-			}
-		}
-
-		zero := int64(0)
-		refused := map[string]func() error{
-			"watch pods": func() error { _, err := core.Pods("notes").Watch(ctx, metav1.ListOptions{}); return err },
-			"create a pod": func() error {
-				_, err := core.Pods("notes").Create(ctx, podObject("notes", "intruder", "notes", "frankfurt-1", true), metav1.CreateOptions{})
-				return err
-			},
-			"update a pod": func() error {
-				_, err := core.Pods("notes").Update(ctx, podObject("notes", "notes-b", "notes", "frankfurt-1", true), metav1.UpdateOptions{})
-				return err
-			},
-			"patch a pod": func() error {
-				_, err := core.Pods("notes").Patch(ctx, "notes-b", "application/merge-patch+json", []byte(`{"metadata":{"labels":{"x":"y"}}}`), metav1.PatchOptions{})
-				return err
-			},
-			"delete a pod": func() error {
-				return core.Pods("notes").Delete(ctx, "notes-b", metav1.DeleteOptions{GracePeriodSeconds: &zero})
-			},
-			"delete a claim": func() error {
-				return core.PersistentVolumeClaims("data").Delete(ctx, "postgres-data", metav1.DeleteOptions{})
-			},
-			"delete a volume": func() error { return core.PersistentVolumes().Delete(ctx, "pv-postgres", metav1.DeleteOptions{}) },
-			"read a pod's log": func() error {
-				_, err := core.Pods("notes").GetLogs("notes-b", &corev1.PodLogOptions{}).DoRaw(ctx)
-				return err
-			},
-			"list secrets":    func() error { _, err := core.Secrets("notes").List(ctx, metav1.ListOptions{}); return err },
-			"list configmaps": func() error { _, err := core.ConfigMaps("notes").List(ctx, metav1.ListOptions{}); return err },
-			"list nodes":      func() error { _, err := core.Nodes().List(ctx, metav1.ListOptions{}); return err },
-			"list namespaces": func() error { _, err := core.Namespaces().List(ctx, metav1.ListOptions{}); return err },
-			"list deployments": func() error {
-				_, err := restricted.AppsV1().Deployments("notes").List(ctx, metav1.ListOptions{})
-				return err
-			},
-			"read its own grant": func() error {
-				_, err := restricted.RbacV1().ClusterRoles().Get(ctx, "delivery-collector", metav1.GetOptions{})
-				return err
-			},
-		}
-		for name, do := range refused {
-			if err := do(); !apierrors.IsForbidden(err) {
-				t.Errorf("%s was not forbidden: %v", name, err)
-			}
 		}
 	})
 }

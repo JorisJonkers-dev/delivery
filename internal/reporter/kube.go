@@ -15,7 +15,7 @@ import (
 	"github.com/JorisJonkers-dev/delivery/internal/gate"
 )
 
-// The kinds the Reporter reads (deploy/reporter/rbac.yaml).
+// The kinds the Reporter reads, as its api block in deploy/delivery.project.yml declares.
 var (
 	//nolint:gochecknoglobals // constants in all but type
 	Kustomizations = schema.GroupVersionResource{Group: "kustomize.toolkit.fluxcd.io", Version: "v1", Resource: "kustomizations"}
