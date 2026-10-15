@@ -127,3 +127,27 @@ func (v Vault) list(ctx context.Context, path string) ([]string, error) {
 	_, err := v.call(ctx, "LIST", path, nil, &answer)
 	return answer.Data.Keys, err
 }
+
+// kv reads a KV version 2 document as Vault holds it, with the version a check-and-set write names;
+// a document Vault does not hold is version 0.
+func (v Vault) kv(ctx context.Context, path string) (map[string]json.RawMessage, int, error) {
+	var answer struct {
+		Data struct {
+			Data     map[string]json.RawMessage `json:"data"`
+			Metadata struct {
+				Version int `json:"version"`
+			} `json:"metadata"`
+		} `json:"data"`
+	}
+	found, err := v.call(ctx, http.MethodGet, path, nil, &answer)
+	if err != nil || !found {
+		return nil, 0, err
+	}
+	return answer.Data.Data, answer.Data.Metadata.Version, nil
+}
+
+// putKV writes a KV version 2 document only if Vault still holds the version read.
+func (v Vault) putKV(ctx context.Context, path string, data map[string]json.RawMessage, version int) error {
+	_, err := v.call(ctx, http.MethodPost, path, map[string]any{"data": data, "options": map[string]int{"cas": version}}, nil)
+	return err
+}

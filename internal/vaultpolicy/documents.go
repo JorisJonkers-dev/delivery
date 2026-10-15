@@ -23,6 +23,7 @@ import (
 const (
 	policySuffix = ".policy.json"
 	roleSuffix   = ".role.json"
+	keysSuffix   = ".generated.json"
 )
 
 // label is one part of a name: a Project, or an identity within it.
@@ -94,7 +95,7 @@ type rules struct {
 // Read reads every identity's two documents from dir, by name. A directory that holds anything
 // it cannot write as rendered is refused whole: half a render is not applied.
 func Read(dir string) ([]Document, error) {
-	policies, roles, err := load(dir)
+	policies, roles, _, err := load(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -125,12 +126,12 @@ func Read(dir string) ([]Document, error) {
 
 // load reads the directory's files into the policies' texts and the roles, by the name before
 // each file's suffix.
-func load(dir string) (policies map[string]string, roles map[string]Role, err error) {
+func load(dir string) (policies map[string]string, roles map[string]Role, generated map[string]string, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("vaultpolicy: read %s: %w", dir, err)
+		return nil, nil, nil, fmt.Errorf("vaultpolicy: read %s: %w", dir, err)
 	}
-	policies, roles = map[string]string{}, map[string]Role{}
+	policies, roles, generated = map[string]string{}, map[string]Role{}, map[string]string{}
 	for _, entry := range entries {
 		file := entry.Name()
 		// A mounted ConfigMap carries its own bookkeeping beside the files, in entries named `..`.
@@ -139,7 +140,7 @@ func load(dir string) (policies map[string]string, roles map[string]Role, err er
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, file)) //nolint:gosec // G304: the directory is the job's own input, and the name is one it listed
 		if err != nil {
-			return nil, nil, fmt.Errorf("vaultpolicy: read %s: %w", file, err)
+			return nil, nil, nil, fmt.Errorf("vaultpolicy: read %s: %w", file, err)
 		}
 		switch {
 		case strings.HasSuffix(file, policySuffix):
@@ -147,14 +148,16 @@ func load(dir string) (policies map[string]string, roles map[string]Role, err er
 		case strings.HasSuffix(file, roleSuffix):
 			var role Role
 			if err := decode(string(raw), &role); err != nil {
-				return nil, nil, fmt.Errorf("vaultpolicy: %s is not a role the render writes: %w", file, err)
+				return nil, nil, nil, fmt.Errorf("vaultpolicy: %s is not a role the render writes: %w", file, err)
 			}
 			roles[strings.TrimSuffix(file, roleSuffix)] = role
+		case strings.HasSuffix(file, keysSuffix):
+			generated[strings.TrimSuffix(file, keysSuffix)] = string(raw)
 		default:
-			return nil, nil, fmt.Errorf("vaultpolicy: %s is neither a policy nor a role", file)
+			return nil, nil, nil, fmt.Errorf("vaultpolicy: %s is neither a policy, a role nor generated keys", file)
 		}
 	}
-	return policies, roles, nil
+	return policies, roles, generated, nil
 }
 
 var errNotRendered = errors.New("is not a document the render writes")

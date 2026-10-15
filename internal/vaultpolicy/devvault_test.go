@@ -164,3 +164,25 @@ func tokenFor(t *testing.T, vault vaultpolicy.Vault, policy string) string {
 	}
 	return token
 }
+
+func TestAgainstADevVaultGeneratedKeysAreWrittenOnceAndNeverChanged(t *testing.T) {
+	vault := devVault(t)
+	keys, err := vaultpolicy.ReadKeys(rendered(t, map[string]string{"tribelt-system.generated.json": tribeltKeys}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin(t, vault, http.MethodPost, "secret/data/tribelt-system/app", `{"data":{"visitor_hmac_key":"kept"}}`)
+
+	written, err := vaultpolicy.ApplyKeys(t.Context(), vault, keys)
+	if err != nil || !slices.Equal(written, []string{"key secret/data/tribelt-system/app#session_key"}) {
+		t.Fatalf("written = %v, %v", written, err)
+	}
+	held := admin(t, vault, http.MethodGet, "secret/data/tribelt-system/app", "")
+	data := held["data"].(map[string]any)["data"].(map[string]any)
+	if data["visitor_hmac_key"] != "kept" || len(data["session_key"].(string)) != 64 {
+		t.Fatalf("Vault holds %v", data)
+	}
+	if again, err := vaultpolicy.ApplyKeys(t.Context(), vault, keys); err != nil || len(again) != 0 {
+		t.Fatalf("second run = %v, %v", again, err)
+	}
+}
