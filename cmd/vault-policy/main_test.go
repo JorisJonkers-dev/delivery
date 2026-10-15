@@ -91,7 +91,7 @@ func TestARunThatCannotApplyTheRenderExitsOneAndWritesNothing(t *testing.T) {
 		"no render":        {func(env map[string]string, _ string) { env["POLICIES_DIR"] = "/nowhere/at/all" }, token, "read /nowhere/at/all"},
 		"a render that holds something else": {func(_ map[string]string, dir string) {
 			_ = os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("x"), 0o600)
-		}, token, "neither a policy nor a role"},
+		}, token, "neither a policy, a role nor generated keys"},
 		"no ServiceAccount token": {func(map[string]string, string) {}, func(string) ([]byte, error) { return nil, errors.New("no such file") }, "read the ServiceAccount token"},
 		"a role Vault refuses":    {func(env map[string]string, _ string) { env["VAULT_ROLE"] = "someone-else" }, token, "log in as someone-else"},
 	}

@@ -1,5 +1,5 @@
 // Command vault-policy writes the rendered Vault policies and Kubernetes auth roles into Vault,
-// once, and exits: it is a Job of the `apps-vso-secrets` Reconcile Unit, so it runs before any
+// then every generated key Vault lacks, once, and exits: it is a Job of the `apps-vso-secrets` Reconcile Unit, so it runs before any
 // Application that holds a grant, and a run that fails stops that unit.
 //
 // Environment: VAULT_ADDR (required), VAULT_ROLE (default policy-admin), POLICIES_DIR (default
@@ -66,7 +66,12 @@ func run(ctx context.Context, getenv func(string) string, readFile func(string) 
 		return vaultpolicy.Report{}, errors.New("VAULT_ADDR is not set")
 	}
 	// The render is read whole before Vault is touched: half a render is not applied.
-	documents, err := vaultpolicy.Read(or("POLICIES_DIR", defaultDirectory))
+	dir := or("POLICIES_DIR", defaultDirectory)
+	documents, err := vaultpolicy.Read(dir)
+	if err != nil {
+		return vaultpolicy.Report{}, err
+	}
+	keys, err := vaultpolicy.ReadKeys(dir)
 	if err != nil {
 		return vaultpolicy.Report{}, err
 	}
@@ -79,5 +84,11 @@ func run(ctx context.Context, getenv func(string) string, readFile func(string) 
 	if err != nil {
 		return vaultpolicy.Report{}, err
 	}
-	return vaultpolicy.Apply(ctx, vault, documents)
+	report, err := vaultpolicy.Apply(ctx, vault, documents)
+	if err != nil {
+		return report, err
+	}
+	written, err := vaultpolicy.ApplyKeys(ctx, vault, keys)
+	report.Written = append(report.Written, written...)
+	return report, err
 }

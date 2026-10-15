@@ -68,14 +68,17 @@ type fakeVault struct {
 	mu       sync.Mutex
 	policies map[string]string
 	roles    map[string]vaultpolicy.Role
-	writes   []string
+	kv       map[string]kvEntry
+	// raceKV, when set, runs once after a KV read, as another writer would.
+	raceKV func()
+	writes []string
 	// broken names the request, as `METHOD path`, that Vault refuses.
 	broken string
 }
 
 func newFakeVault(t *testing.T) *fakeVault {
 	t.Helper()
-	f := &fakeVault{policies: map[string]string{}, roles: map[string]vaultpolicy.Role{}}
+	f := &fakeVault{policies: map[string]string{}, roles: map[string]vaultpolicy.Role{}, kv: map[string]kvEntry{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -115,6 +118,10 @@ func (f *fakeVault) serve(w http.ResponseWriter, r *http.Request) {
 		slices.Sort(names)
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"keys": names}})
 	}
+	if kvPath, isKV := strings.CutPrefix(path, "secret/data/"); isKV {
+		f.serveKV(w, r, kvPath)
+		return
+	}
 	switch name, isPolicy := strings.CutPrefix(path, "sys/policies/acl/"); {
 	case r.Method == "LIST" && path == "sys/policies/acl":
 		keys(mapKeys(f.policies))
@@ -153,6 +160,50 @@ func (f *fakeVault) serveRole(w http.ResponseWriter, r *http.Request, name strin
 		f.roles[name] = role
 		f.writes = append(f.writes, "role "+name)
 		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+	}
+}
+
+// kvEntry is one KV version 2 document: its data and the version Vault numbers it by.
+type kvEntry struct {
+	data    map[string]any
+	version int
+}
+
+// serveKV is KV version 2's read and check-and-set write, as Vault answers them.
+func (f *fakeVault) serveKV(w http.ResponseWriter, r *http.Request, path string) {
+	held, found := f.kv[path]
+	switch r.Method {
+	case http.MethodGet:
+		if !found {
+			http.NotFound(w, r)
+			if f.raceKV != nil {
+				f.raceKV()
+				f.raceKV = nil
+			}
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"data": held.data, "metadata": map[string]any{"version": held.version}}})
+		if f.raceKV != nil {
+			f.raceKV()
+			f.raceKV = nil
+		}
+	case http.MethodPost:
+		var sent struct {
+			Data    map[string]any `json:"data"`
+			Options struct {
+				CAS *int `json:"cas"`
+			} `json:"options"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		if sent.Options.CAS == nil || *sent.Options.CAS != held.version {
+			http.Error(w, `{"errors":["check-and-set parameter did not match the current version"]}`, http.StatusBadRequest)
+			return
+		}
+		f.kv[path] = kvEntry{data: sent.Data, version: held.version + 1}
+		f.writes = append(f.writes, "kv "+path)
+		_, _ = io.WriteString(w, `{"data":{"version":1}}`)
 	default:
 		http.Error(w, "unexpected", http.StatusMethodNotAllowed)
 	}
