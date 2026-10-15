@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.6.0...v0.7.0) (2026-10-15)
+
+
+### Features
+
+* the Vault policy job writes the generated keys Vault lacks ([#55](https://github.com/JorisJonkers-dev/delivery/issues/55)) ([9d260a0](https://github.com/JorisJonkers-dev/delivery/commit/9d260a0a10a0080cd87d4a0198f4ce5f70af33e2))
+
 ## [0.6.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.5.0...v0.6.0) (2026-10-14)
 
 
