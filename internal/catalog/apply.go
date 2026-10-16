@@ -26,7 +26,8 @@ var errUnadoptable = errors.New("is never adopted")
 // shared with another project is never adopted.
 const unprivileged = `NOT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls)
 	AND r.rolname NOT LIKE 'pg\_%' AND r.rolname NOT LIKE '%-owner' AND r.rolname NOT LIKE '%-data'
-	AND NOT EXISTS (SELECT 1 FROM pg_database o WHERE o.datdba = r.oid AND o.datname <> $2)`
+	AND NOT EXISTS (SELECT 1 FROM pg_database o WHERE o.datdba = r.oid AND o.datname <> $2)
+	AND NOT EXISTS (SELECT 1 FROM pg_tablespace t WHERE t.spcowner = r.oid)`
 
 // Apply applies every database of c, in order, and stops at the first that fails.
 // It never drops a role, a database or a privilege, so a run applied twice
@@ -99,15 +100,26 @@ func ensureRoles(ctx context.Context, server *pgx.Conn, d Database, report *Repo
 	return nil
 }
 
+var errWideRole = errors.New("exists with more than the catalog gives it")
+
+// ensureRole creates role where it is absent. One that exists is held to what
+// the catalog would have made: every login the Secret Store issues inherits
+// it, so it signs in to nothing, holds no attribute and is a member of no role.
 func ensureRole(ctx context.Context, server *pgx.Conn, role string) (bool, error) {
-	var exists bool
-	if err := server.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", role).Scan(&exists); err != nil {
+	var narrow bool
+	err := server.QueryRow(ctx, `SELECT NOT (r.rolcanlogin OR r.rolsuper OR r.rolcreaterole OR r.rolcreatedb
+		OR r.rolreplication OR r.rolbypassrls)
+		AND NOT EXISTS (SELECT 1 FROM pg_auth_members a WHERE a.member = r.oid)
+		FROM pg_roles r WHERE r.rolname = $1`, role).Scan(&narrow)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return true, exec(ctx, server, "CREATE ROLE %s NOLOGIN", role)
+	case err != nil:
 		return false, err
+	case !narrow:
+		return false, fmt.Errorf("%s %w", role, errWideRole)
 	}
-	if exists {
-		return false, nil
-	}
-	return true, exec(ctx, server, "CREATE ROLE %s NOLOGIN", role)
+	return false, nil
 }
 
 // ensureDatabase creates d where it is absent and returns its owner where it was not.

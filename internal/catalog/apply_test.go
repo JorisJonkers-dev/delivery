@@ -164,7 +164,12 @@ func TestTheCatalogCreatesAdoptsAndGrantsAndIsSafeToRepeat(t *testing.T) {
 		"CREATE DATABASE other_db OWNER shared_user",
 		"CREATE ROLE wide_user NOLOGIN CREATEROLE",
 		"CREATE DATABASE wide_db OWNER wide_user")
-	for _, name := range []string{"owned", "shared", "wide"} {
+	// Never used: an owner role someone made with more than the catalog gives it, which
+	// every login the Secret Store issues would inherit.
+	run(t, admin,
+		"CREATE ROLE \"loaded-owner\" NOLOGIN IN ROLE pg_write_all_data",
+		"CREATE ROLE \"login-owner\" LOGIN")
+	for _, name := range []string{"owned", "shared", "wide", "loaded", "login"} {
 		_, err = catalog.Apply(t.Context(), connect, catalog.Catalog{Databases: []catalog.Database{
 			{Name: name + "_db", Owner: name + "-owner", Data: name + "-data"},
 		}})
