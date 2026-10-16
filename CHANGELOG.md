@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.0...v0.9.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **vault-policy:** write a catalog method's own policy ([#61](https://github.com/JorisJonkers-dev/delivery/issues/61)) ([bc51071](https://github.com/JorisJonkers-dev/delivery/commit/bc5107112fec8e55ae4ac01f4e2a3395506c202c))
+
 ## [0.9.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.8.0...v0.9.0) (2026-10-16)
 
 
