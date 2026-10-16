@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.8.0...v0.9.0) (2026-10-16)
+
+
+### Features
+
+* **postgres-catalog:** apply the database catalog the render hands it ([#59](https://github.com/JorisJonkers-dev/delivery/issues/59)) ([543558d](https://github.com/JorisJonkers-dev/delivery/commit/543558dc081e808ff5faa6ef48e801235c7823e9))
+
 ## [0.8.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.7.0...v0.8.0) (2026-10-16)
 
 
