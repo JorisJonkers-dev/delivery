@@ -11,6 +11,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | ClusterState Collector: commits the snapshot to the Estate repository | built and tested; not deployed yet, see [The Collector](#the-collector) |
 | Reporter: keeps every Rollout's GitHub Deployment current, stage by stage | built and tested; not deployed yet, see [The Reporter](#the-reporter). Writes no warmup stage until the Release Gate warms up |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
+| Catalog method: `postgres-catalog`, the image the Platform document's `postgres` engine names to apply its database catalog | built and tested against a real Postgres and a dev Vault, see [The catalog method](#the-catalog-method); not deployed yet |
 | Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. No off-cluster copy yet |
 
 ## What is in it
@@ -27,6 +28,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | `cmd/reporter/` | The Reporter binary: a pass at start, on every event Flux posts it, and on its own interval |
 | `internal/reporter/` | The stage each Rollout is at, read from its unit, its source and its Canaries; the writes to its Deployment; and the envtest case that runs it against a cluster |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
+| `cmd/postgres-catalog/`, `internal/catalog/` | The catalog method's binary, and what it applies: databases, roles, adoption and the Secret Store's database roles |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
 | `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN` and a Rollback's copies by age, and what each method writes: a gzipped tar of `/data`, a gzipped `pg_dumpall`, the broker's definitions |
 | `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
@@ -192,6 +194,26 @@ place since is not the one started. A record is named for the namespace as well 
 so inputs under one Application id elsewhere can neither claim it first nor write over it: they
 are tended as their own namespace's, and silence nothing of this one. The `api` block of its Process in `deploy/delivery.project.yml` declares the grant, and
 deploy-kit renders the ClusterRole, its binding and the token from that.
+
+## The catalog method
+
+deploy-kit renders, for a Postgres whose engine names `catalog: postgres-catalog`, a Job and an
+hourly CronJob beside it, handed the catalog as `CATALOG_FILE`
+([deploy-kit spec/v1/16-dependencies.md](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/16-dependencies.md#applying-the-catalog)).
+Each run, for each database the catalog names, in order:
+
+1. creates the owner and data roles, without login, where they are absent;
+2. creates the database, owned by the owner role, where it is absent;
+3. adopts a database another role owns: reassigns that role's objects to the owner role and makes
+   it a member of it, so old logins keep working; a database a superuser owns fails the run;
+4. reassigns what every adopted role has created since;
+5. grants the data role read and write on every table and sequence of the owner's schemas, now
+   and by default;
+6. writes `database/roles/<owner>` and `database/roles/<data>`, whose logins are members of the
+   role and act as it on sign-in.
+
+It signs in to Vault as `VAULT_ROLE`, reads the admin login at the catalog's `admin` path, and
+never drops anything. A second run changes nothing.
 
 ## The Vault policy job
 
