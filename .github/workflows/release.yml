@@ -141,7 +141,7 @@ jobs:
           echo "locked ${FLAGGER} as ${uid}:${gid}"
           cat images.lock.yml >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: images-lock
           path: images.lock.yml
