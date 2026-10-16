@@ -113,12 +113,20 @@ func login(ctx context.Context, vault vaultpolicy.Vault, admin catalog.Admin) (s
 // password never enters a connection string.
 func connector(c catalog.Catalog, user, password string) catalog.Connect {
 	return func(ctx context.Context, database string) (*pgx.Conn, error) {
-		config, err := pgx.ParseConfig(fmt.Sprintf("host=%s port=%d dbname=%s sslmode=prefer connect_timeout=%d",
-			c.Host, c.Port, database, int(timeout.Seconds())))
+		// Built field by field: no environment variable, password file or service file is read.
+		config, err := pgx.ParseConfig("sslmode=prefer")
 		if err != nil {
 			return nil, err
 		}
+		port := uint16(c.Port) //nolint:gosec // G115: Read held the port to 1..65535
+		config.Host, config.Port, config.Database = c.Host, port, database
 		config.User, config.Password = user, password
+		config.ConnectTimeout = timeout
+		// `prefer` tries TLS, then plain text: each attempt is a fallback of its own, and each
+		// must go to the catalog's host, or the password would go wherever the default points.
+		for _, fallback := range config.Fallbacks {
+			fallback.Host, fallback.Port = c.Host, port
+		}
 		return pgx.ConnectConfig(ctx, config)
 	}
 }

@@ -156,11 +156,23 @@ func TestTheCatalogCreatesAdoptsAndGrantsAndIsSafeToRepeat(t *testing.T) {
 		t.Errorf("the data role reads %d rows of since", got)
 	}
 
-	// A database a superuser owns is never adopted.
-	_, err = catalog.Apply(t.Context(), connect, catalog.Catalog{Databases: []catalog.Database{
-		{Name: "owned_db", Owner: "owned-owner", Data: "owned-data"},
-	}})
-	if err == nil {
-		t.Fatal("a database a superuser owns was adopted")
+	// Never adopted: a database a superuser owns, one whose owner owns another database too,
+	// whose objects REASSIGN would move with it, and one whose owner may create roles.
+	run(t, admin,
+		"CREATE ROLE shared_user NOLOGIN",
+		"CREATE DATABASE shared_db OWNER shared_user",
+		"CREATE DATABASE other_db OWNER shared_user",
+		"CREATE ROLE wide_user NOLOGIN CREATEROLE",
+		"CREATE DATABASE wide_db OWNER wide_user")
+	for _, name := range []string{"owned", "shared", "wide"} {
+		_, err = catalog.Apply(t.Context(), connect, catalog.Catalog{Databases: []catalog.Database{
+			{Name: name + "_db", Owner: name + "-owner", Data: name + "-data"},
+		}})
+		if err == nil {
+			t.Errorf("%s_db was adopted", name)
+		}
+	}
+	if got := one[string](t, admin, "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'other_db'"); got != "shared_user" {
+		t.Errorf("other_db is owned by %s", got)
 	}
 }

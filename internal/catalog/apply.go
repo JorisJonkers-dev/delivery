@@ -18,7 +18,15 @@ type Report struct {
 	Adopted []string
 }
 
-var errSuperuser = errors.New("is owned by a superuser and is never adopted")
+var errUnadoptable = errors.New("is never adopted")
+
+// unprivileged holds, of a role, what adopting it must not hand on: no attribute
+// beyond owning, and no database but the one adopted. REASSIGN OWNED moves every
+// database a role owns, and the role's members gain the owner role, so a role
+// shared with another project is never adopted.
+const unprivileged = `NOT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls)
+	AND r.rolname NOT LIKE 'pg\_%' AND r.rolname NOT LIKE '%-owner' AND r.rolname NOT LIKE '%-data'
+	AND NOT EXISTS (SELECT 1 FROM pg_database o WHERE o.datdba = r.oid AND o.datname <> $2)`
 
 // Apply applies every database of c, in order, and stops at the first that fails.
 // It never drops a role, a database or a privilege, so a run applied twice
@@ -39,14 +47,8 @@ func apply(ctx context.Context, connect Connect, d Database, report *Report) err
 		return err
 	}
 	defer func() { _ = server.Close(context.Background()) }()
-	for _, role := range []string{d.Owner, d.Data} {
-		created, err := ensureRole(ctx, server, role)
-		if err != nil {
-			return err
-		}
-		if created {
-			report.Created = append(report.Created, "role "+role)
-		}
+	if err := ensureRoles(ctx, server, d, report); err != nil {
+		return err
 	}
 	owner, err := ensureDatabase(ctx, server, d)
 	if err != nil {
@@ -61,12 +63,15 @@ func apply(ctx context.Context, connect Connect, d Database, report *Report) err
 	}
 	defer func() { _ = db.Close(context.Background()) }()
 	if owner != "" && owner != d.Owner {
+		if err := adoptable(ctx, server, owner, d.Name); err != nil {
+			return err
+		}
 		if err := adopt(ctx, db, d, owner); err != nil {
 			return err
 		}
 		report.Adopted = append(report.Adopted, d.Name+" from "+owner)
 	}
-	if err := reassignAdopted(ctx, db, d.Owner); err != nil {
+	if err := reassignAdopted(ctx, db, d); err != nil {
 		return err
 	}
 	return grantData(ctx, db, d)
@@ -81,6 +86,19 @@ func adopt(ctx context.Context, db *pgx.Conn, d Database, old string) error {
 	return exec(ctx, db, "GRANT %s TO %s", d.Owner, old)
 }
 
+func ensureRoles(ctx context.Context, server *pgx.Conn, d Database, report *Report) error {
+	for _, role := range []string{d.Owner, d.Data} {
+		created, err := ensureRole(ctx, server, role)
+		if err != nil {
+			return err
+		}
+		if created {
+			report.Created = append(report.Created, "role "+role)
+		}
+	}
+	return nil
+}
+
 func ensureRole(ctx context.Context, server *pgx.Conn, role string) (bool, error) {
 	var exists bool
 	if err := server.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", role).Scan(&exists); err != nil {
@@ -92,31 +110,39 @@ func ensureRole(ctx context.Context, server *pgx.Conn, role string) (bool, error
 	return true, exec(ctx, server, "CREATE ROLE %s NOLOGIN", role)
 }
 
-// ensureDatabase creates d where it is absent and returns its owner where it
-// was not, refusing one a superuser owns.
+// ensureDatabase creates d where it is absent and returns its owner where it was not.
 func ensureDatabase(ctx context.Context, server *pgx.Conn, d Database) (string, error) {
 	var owner string
-	var super bool
-	err := server.QueryRow(ctx, `SELECT r.rolname, r.rolsuper FROM pg_database d
-		JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = $1`, d.Name).Scan(&owner, &super)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	err := server.QueryRow(ctx, `SELECT r.rolname FROM pg_database d
+		JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = $1`, d.Name).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", exec(ctx, server, "CREATE DATABASE %s OWNER %s", d.Name, d.Owner)
-	case err != nil:
-		return "", err
-	case super:
-		return "", fmt.Errorf("%s %w", owner, errSuperuser)
 	}
-	return owner, nil
+	return owner, err
+}
+
+// adoptable refuses to adopt database from a role that is privileged, or that
+// owns any other database.
+func adoptable(ctx context.Context, server *pgx.Conn, role, database string) error {
+	var ok bool
+	err := server.QueryRow(ctx, `SELECT `+unprivileged+` FROM pg_roles r WHERE r.rolname = $1`, role, database).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("owned by %s, which is privileged or owns another database: %w", role, errUnadoptable)
+	}
+	return nil
 }
 
 // reassignAdopted hands the owner role what each role it adopted has created
 // since: every member that cannot sign in, which is how an adopted owner is
-// told from a login the Secret Store issued.
-func reassignAdopted(ctx context.Context, db *pgx.Conn, owner string) error {
-	rows, err := db.Query(ctx, `SELECT m.rolname FROM pg_auth_members a
-		JOIN pg_roles m ON m.oid = a.member JOIN pg_roles o ON o.oid = a.roleid
-		WHERE o.rolname = $1 AND NOT m.rolcanlogin AND NOT m.rolsuper ORDER BY m.rolname`, owner)
+// told from a login the Secret Store issued, and that adopting could have taken.
+func reassignAdopted(ctx context.Context, db *pgx.Conn, d Database) error {
+	owner := d.Owner
+	rows, err := db.Query(ctx, `SELECT r.rolname FROM pg_auth_members a
+		JOIN pg_roles r ON r.oid = a.member JOIN pg_roles o ON o.oid = a.roleid
+		WHERE o.rolname = $1 AND NOT r.rolcanlogin AND `+unprivileged+` ORDER BY r.rolname`, owner, d.Name)
 	if err != nil {
 		return err
 	}
