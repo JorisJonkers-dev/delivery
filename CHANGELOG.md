@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.7.0...v0.8.0) (2026-10-16)
+
+
+### Features
+
+* **vault-policy:** start a generated key from the value its old location holds ([#57](https://github.com/JorisJonkers-dev/delivery/issues/57)) ([0c0d499](https://github.com/JorisJonkers-dev/delivery/commit/0c0d499883cfd0d737bb3c025800ce3a4218eddc))
+
 ## [0.7.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.6.0...v0.7.0) (2026-10-15)
 
 
