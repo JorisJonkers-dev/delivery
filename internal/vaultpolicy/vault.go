@@ -151,3 +151,15 @@ func (v Vault) putKV(ctx context.Context, path string, data map[string]json.RawM
 	_, err := v.call(ctx, http.MethodPost, path, map[string]any{"data": data, "options": map[string]int{"cas": version}}, nil)
 	return err
 }
+
+// ReadKV reads a KV version 2 document's keys as Vault holds them; nil where it holds none.
+func (v Vault) ReadKV(ctx context.Context, path string) (map[string]json.RawMessage, error) {
+	data, _, err := v.kv(ctx, path)
+	return data, err
+}
+
+// Write writes one document at path.
+func (v Vault) Write(ctx context.Context, path string, body any) error {
+	_, err := v.call(ctx, http.MethodPost, path, body, nil)
+	return err
+}

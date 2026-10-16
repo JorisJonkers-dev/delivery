@@ -9,7 +9,7 @@ COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
-# The command this image runs: release-gate, collector, reporter or vault-policy. One Dockerfile, one image per command.
+# The command this image runs: release-gate, collector, reporter, vault-policy or postgres-catalog. One Dockerfile, one image per command.
 ARG APP=release-gate
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
