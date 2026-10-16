@@ -17,10 +17,18 @@ import (
 // namespace, written once when absent and never changed
 // (deploy-kit spec/v1/30-deliverables.md#vault-configuration-is-rendered-not-applied).
 type Key struct {
-	Path     string `json:"path"`
-	Key      string `json:"key"`
-	Bytes    int    `json:"bytes"`
-	Encoding string `json:"encoding"`
+	Path     string    `json:"path"`
+	Key      string    `json:"key"`
+	Bytes    int       `json:"bytes"`
+	Encoding string    `json:"encoding"`
+	Adopt    *Location `json:"adopt,omitempty"`
+}
+
+// Location is a key of a KV document whose value a generated key starts from, while Vault does
+// not hold the generated key.
+type Location struct {
+	Path string `json:"path"`
+	Key  string `json:"key"`
 }
 
 const (
@@ -29,6 +37,8 @@ const (
 )
 
 var keyName = regexp.MustCompile(`^` + segment + `$`) //nolint:gochecknoglobals // a compiled constant
+
+var kvPath = regexp.MustCompile(`^secret/data(/` + segment + `)+$`) //nolint:gochecknoglobals // a compiled constant
 
 var encodings = map[string]func([]byte) string{ //nolint:gochecknoglobals // a constant table
 	"hex":       hex.EncodeToString,
@@ -69,6 +79,8 @@ func ReadKeys(dir string) ([]Key, error) {
 				return nil, fmt.Errorf("vaultpolicy: %s generates %d bytes for %s: %w", namespace, k.Bytes, k.Key, errNotRendered)
 			case !encodes:
 				return nil, fmt.Errorf("vaultpolicy: %s encodes %s as %q: %w", namespace, k.Key, k.Encoding, errNotRendered)
+			case k.Adopt != nil && (!kvPath.MatchString(k.Adopt.Path) || !keyName.MatchString(k.Adopt.Key)):
+				return nil, fmt.Errorf("vaultpolicy: %s adopts %s from %q#%q: %w", namespace, k.Key, k.Adopt.Path, k.Adopt.Key, errNotRendered)
 			case seen[k.Path+"#"+k.Key]:
 				return nil, fmt.Errorf("vaultpolicy: %s#%s is generated twice: %w", k.Path, k.Key, errNotRendered)
 			}
@@ -114,12 +126,17 @@ func fill(ctx context.Context, vault Vault, path string, keys []Key) ([]string, 
 		if _, present := held[k.Key]; present {
 			continue
 		}
-		value, err := generate(k)
+		value, from, err := adopted(ctx, vault, k)
 		if err != nil {
 			return nil, err
 		}
+		if value == nil {
+			if value, err = generate(k); err != nil {
+				return nil, err
+			}
+		}
 		data[k.Key] = value
-		added = append(added, "key "+path+"#"+k.Key)
+		added = append(added, "key "+path+"#"+k.Key+from)
 	}
 	if len(added) == 0 {
 		return nil, nil
@@ -128,6 +145,23 @@ func fill(ctx context.Context, vault Vault, path string, keys []Key) ([]string, 
 		return nil, fmt.Errorf("vaultpolicy: write %s: %w", path, err)
 	}
 	return added, nil
+}
+
+// adopted is the value k's old location holds, copied unchanged, and how the report names it;
+// nothing where k adopts none or the location holds none.
+func adopted(ctx context.Context, vault Vault, k Key) (json.RawMessage, string, error) {
+	if k.Adopt == nil {
+		return nil, "", nil
+	}
+	old, _, err := vault.kv(ctx, k.Adopt.Path)
+	if err != nil {
+		return nil, "", fmt.Errorf("vaultpolicy: read %s: %w", k.Adopt.Path, err)
+	}
+	value, present := old[k.Adopt.Key]
+	if !present || string(value) == "null" {
+		return nil, "", nil
+	}
+	return value, " (adopted from " + k.Adopt.Path + "#" + k.Adopt.Key + ")", nil
 }
 
 var errShortRead = errors.New("short random read")
