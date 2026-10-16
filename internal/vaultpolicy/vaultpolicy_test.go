@@ -476,3 +476,50 @@ func TestTheJobLogsInAsItsOwnRole(t *testing.T) {
 		t.Fatal("no token, no login")
 	}
 }
+
+// The catalog method's policy as deploy-kit renders it for production: its admin login, and the
+// owner and data roles of each database its catalog names.
+const catalogPolicy = `{"path":{"secret/data/platform/postgres":{"capabilities":["read"]},` +
+	`"secret/metadata/platform/postgres":{"capabilities":["read"]},` +
+	`"database/roles/tribelt-owner":{"capabilities":["create","read","update"]},` +
+	`"database/roles/tribelt-data":{"capabilities":["create","read","update"]}}}`
+
+func catalogRole(account string) string {
+	return `{"bound_service_account_names":["` + account + `"],"bound_service_account_namespaces":["data-system"],"token_policies":["data-system-` + account + `"]}`
+}
+
+func TestOnlyACatalogMethodWritesTheDatabaseRolesItsCatalogNames(t *testing.T) {
+	documents, err := vaultpolicy.Read(rendered(t, map[string]string{
+		"data-system-postgres-catalog.policy.json": catalogPolicy,
+		"data-system-postgres-catalog.role.json":   catalogRole("postgres-catalog"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 1 || !strings.Contains(documents[0].Policy, "database/roles/tribelt-owner") {
+		t.Fatalf("documents = %+v", documents)
+	}
+
+	for name, files := range map[string]map[string]string{
+		"another identity writing a role": {
+			"data-system-postgres.policy.json": catalogPolicy,
+			"data-system-postgres.role.json":   catalogRole("postgres"),
+		},
+		"a catalog method deleting a role": {
+			"data-system-postgres-catalog.policy.json": strings.Replace(catalogPolicy, `"create","read","update"]},"database/roles/tribelt-data"`, `"create","read","update","delete"]},"database/roles/tribelt-data"`, 1),
+			"data-system-postgres-catalog.role.json":   catalogRole("postgres-catalog"),
+		},
+		"a catalog method writing a role no catalog derives": {
+			"data-system-postgres-catalog.policy.json": strings.Replace(catalogPolicy, "database/roles/tribelt-data", "database/roles/root", 1),
+			"data-system-postgres-catalog.role.json":   catalogRole("postgres-catalog"),
+		},
+		"a catalog method writing the connection": {
+			"data-system-postgres-catalog.policy.json": strings.Replace(catalogPolicy, "database/roles/tribelt-data", "database/config/postgres", 1),
+			"data-system-postgres-catalog.role.json":   catalogRole("postgres-catalog"),
+		},
+	} {
+		if _, err := vaultpolicy.Read(rendered(t, files)); err == nil {
+			t.Errorf("%s was read", name)
+		}
+	}
+}

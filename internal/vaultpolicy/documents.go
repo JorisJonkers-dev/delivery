@@ -65,6 +65,15 @@ var grantable = []struct { //nolint:gochecknoglobals // a constant list
 	{regexp.MustCompile(`^transit/keys/` + segment + `/rotate$`), []string{"update"}},
 }
 
+// catalogRoles is the one form a catalog method's identity, `<process>-catalog`, holds beside
+// the grants: writing the database roles its catalog names, `<project>-owner` and
+// `<project>-data` (deploy-kit spec/v1/16-dependencies.md#applying-the-catalog). No other
+// identity may write a database role.
+var catalogRoles = regexp.MustCompile(`^database/roles/` + label + `-(owner|data)$`) //nolint:gochecknoglobals // a compiled constant
+
+// catalogMethod is the suffix of a catalog method's ServiceAccount.
+const catalogMethod = "-catalog"
+
 // Role is a Kubernetes auth role as the render writes it: one ServiceAccount of one namespace,
 // bound to the one policy of the same name.
 type Role struct {
@@ -196,7 +205,8 @@ func checked(identity, policy string, r Role) (Document, error) {
 		return Document{}, fmt.Errorf("vaultpolicy: the policy of %s does not parse: %w", identity, err)
 	}
 	for path, rule := range read.Path {
-		if !grants(path, rule.Capabilities) {
+		catalog := strings.HasSuffix(serviceAccount, catalogMethod)
+		if !grants(path, rule.Capabilities) && (!catalog || !writesRoles(path, rule.Capabilities)) {
 			return Document{}, fmt.Errorf("vaultpolicy: the policy of %s grants %v on %q: %w", identity, rule.Capabilities, path, errNotRendered)
 		}
 	}
@@ -205,6 +215,13 @@ func checked(identity, policy string, r Role) (Document, error) {
 		return Document{}, fmt.Errorf("vaultpolicy: the policy of %s: %w", identity, err)
 	}
 	return Document{Name: identity, Policy: string(text) + "\n", Role: r}, nil
+}
+
+// writesRoles reports whether a catalog method writes a database role it may: create, read and
+// update on one owner or data role, and nothing more.
+func writesRoles(path string, capabilities []string) bool {
+	return catalogRoles.MatchString(path) && len(capabilities) > 0 &&
+		!slices.ContainsFunc(capabilities, func(c string) bool { return !slices.Contains([]string{"create", "read", "update"}, c) })
 }
 
 // grants reports whether a grant can derive these capabilities on this path.
