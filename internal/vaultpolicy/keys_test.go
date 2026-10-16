@@ -104,3 +104,65 @@ func TestAKeyWrittenBetweenTheReadAndTheWriteIsNeverOverwritten(t *testing.T) {
 		t.Fatalf("Vault holds %v", f.kv["tribelt-system/app"].data)
 	}
 }
+
+const adoptingKeys = `{"keys":[` +
+	`{"path":"secret/data/tribelt-system/keys","key":"session_key","bytes":32,"encoding":"hex",` +
+	`"adopt":{"path":"secret/data/platform/tribelt","key":"session_key"}},` +
+	`{"path":"secret/data/tribelt-system/keys","key":"visitor_hmac_key","bytes":32,"encoding":"hex",` +
+	`"adopt":{"path":"secret/data/platform/tribelt","key":"visitor_hmac_key"}}]}`
+
+func TestAnAdoptedKeyStartsFromTheValueItsOldLocationHolds(t *testing.T) {
+	f := newFakeVault(t)
+	f.kv["platform/tribelt"] = kvEntry{data: map[string]any{"session_key": "sealed-with-this", "oidc.client_secret": "s"}, version: 7}
+	keys, err := vaultpolicy.ReadKeys(rendered(t, map[string]string{"tribelt-system.generated.json": adoptingKeys}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	written, err := vaultpolicy.ApplyKeys(t.Context(), f.vault(), keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(written, []string{
+		"key secret/data/tribelt-system/keys#session_key (adopted from secret/data/platform/tribelt#session_key)",
+		"key secret/data/tribelt-system/keys#visitor_hmac_key",
+	}) {
+		t.Fatalf("written = %v", written)
+	}
+	held := f.kv["tribelt-system/keys"].data
+	if held["session_key"] != "sealed-with-this" {
+		t.Fatalf("session_key = %v", held["session_key"])
+	}
+	// The old location holds no visitor key, so one is generated.
+	if raw, err := hex.DecodeString(held["visitor_hmac_key"].(string)); err != nil || len(raw) != 32 {
+		t.Fatalf("visitor_hmac_key = %v", held["visitor_hmac_key"])
+	}
+	if f.kv["platform/tribelt"].version != 7 {
+		t.Fatal("the old location was written")
+	}
+
+	// Once held, the key is never replaced, whatever the old location holds now.
+	f.kv["platform/tribelt"] = kvEntry{data: map[string]any{"session_key": "changed"}, version: 8}
+	if again, err := vaultpolicy.ApplyKeys(t.Context(), f.vault(), keys); err != nil || len(again) != 0 {
+		t.Fatalf("second run wrote %v, %v", again, err)
+	}
+	if f.kv["tribelt-system/keys"].data["session_key"] != "sealed-with-this" {
+		t.Fatal("an adopted key was replaced")
+	}
+}
+
+func TestAnAdoptedLocationIsOneKvPathAndOneKey(t *testing.T) {
+	for name, adopt := range map[string]string{
+		"a path outside the kv mount":     `{"path":"sys/policies/acl/root","key":"policy"}`,
+		"a path that climbs out":          `{"path":"secret/data/../sys/policies/acl/root","key":"policy"}`,
+		"an empty segment":                `{"path":"secret/data/platform//tribelt","key":"k"}`,
+		"a key with a slash":              `{"path":"secret/data/platform/tribelt","key":"a/b"}`,
+		"no key":                          `{"path":"secret/data/platform/tribelt"}`,
+		"a field the render never writes": `{"path":"secret/data/platform/tribelt","key":"k","version":2}`,
+	} {
+		text := `{"keys":[{"path":"secret/data/tribelt-system/keys","key":"k","bytes":32,"encoding":"hex","adopt":` + adopt + `}]}`
+		if _, err := vaultpolicy.ReadKeys(rendered(t, map[string]string{"tribelt-system.generated.json": text})); err == nil {
+			t.Errorf("%s was read", name)
+		}
+	}
+}
