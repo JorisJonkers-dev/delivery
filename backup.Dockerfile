@@ -1,9 +1,9 @@
-# syntax=docker/dockerfile:1.10
+# syntax=docker/dockerfile:1.28
 # The backup method images the Platform document's engines name, one target each: file-backup,
 # postgres-backup and rabbitmq-backup. All three run cmd/backup; only what each needs beside it
 # differs. Cross-compiles on the build platform, as the Dockerfile beside it does.
 
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
