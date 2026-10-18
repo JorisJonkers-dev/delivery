@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.1...v0.9.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* hand PATH to pg_dumpall, which finds pg_dump beside itself through it ([#64](https://github.com/JorisJonkers-dev/delivery/issues/64)) ([be12776](https://github.com/JorisJonkers-dev/delivery/commit/be12776c76df96835596ff2310d630982dd47764))
+
 ## [0.9.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.0...v0.9.1) (2026-10-16)
 
 
