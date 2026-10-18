@@ -159,12 +159,12 @@ func TestPostgresDumpsThroughPgDumpall(t *testing.T) {
 	at := claim(t)
 	command := filepath.Join(t.TempDir(), "pg_dumpall")
 	//nolint:gosec // G306: an executable stand-in
-	if err := os.WriteFile(command, []byte("#!/bin/sh\necho \"-- $PGUSER@$PGHOST:$PGPORT\"\n"), 0o700); err != nil {
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho \"-- $PGUSER@$PGHOST:$PGPORT on $PATH\"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	written, _, err := run(context.Background(), []string{"postgres"}, env(map[string]string{
 		"BACKUP_RETAIN": "3", "BACKUP_HOST": "postgres.data-system.svc.cluster.local", "BACKUP_PORT": "5432",
-		"PGUSER": "backup", "PGPASSWORD": "secret", "PG_DUMPALL": command,
+		"PGUSER": "backup", "PGPASSWORD": "secret", "PG_DUMPALL": command, "PATH": "/usr/local/bin:/usr/bin",
 	}), at, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestPostgresDumpsThroughPgDumpall(t *testing.T) {
 	if !strings.HasSuffix(written, ".sql.gz") {
 		t.Fatalf("wrote %s", written)
 	}
-	if dump := gunzipped(t, written); dump != "-- backup@postgres.data-system.svc.cluster.local:5432\n" {
+	if dump := gunzipped(t, written); dump != "-- backup@postgres.data-system.svc.cluster.local:5432 on /usr/local/bin:/usr/bin\n" {
 		t.Fatalf("dumped %q", dump)
 	}
 }
