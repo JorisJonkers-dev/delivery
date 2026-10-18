@@ -114,9 +114,10 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 		if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "PGUSER", "PGPASSWORD"); err != nil {
 			return backup.Generation{}, nil, err
 		}
-		// pg_dumpall reads libpq's own variables, so the peer is handed on under their names.
+		// pg_dumpall reads libpq's own variables, so the peer is handed on under their names. It
+		// also finds pg_dump beside itself through PATH, so PATH goes along.
 		env := []string{"PGHOST=" + getenv("BACKUP_HOST"), "PGPORT=" + getenv("BACKUP_PORT")}
-		for _, key := range []string{"PGUSER", "PGPASSWORD", "PGSSLMODE"} {
+		for _, key := range []string{"PGUSER", "PGPASSWORD", "PGSSLMODE", "PATH"} {
 			if value := getenv(key); value != "" {
 				env = append(env, key+"="+value)
 			}
