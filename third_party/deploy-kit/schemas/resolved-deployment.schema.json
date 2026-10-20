@@ -40,6 +40,13 @@
         "policyJob": {
           "$ref": "#/$defs/ResolvedPolicyJob"
         },
+        "catalogJobs": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedCatalogJob"
+          }
+        },
         "events": {
           "$ref": "#/$defs/ResolvedEvents"
         }
@@ -404,6 +411,13 @@
           "items": {
             "$ref": "#/$defs/AnalysisCheck"
           }
+        },
+        "waitsFor": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GateProvider"
+          }
         }
       },
       "required": [
@@ -451,6 +465,24 @@
         "error-rate",
         "latency"
       ]
+    },
+    "GateProvider": {
+      "type": "object",
+      "properties": {
+        "application": {
+          "type": "string",
+          "minLength": 1
+        },
+        "process": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "application",
+        "process"
+      ],
+      "additionalProperties": false
     },
     "GateMigration": {
       "type": "object",
@@ -582,7 +614,11 @@
         },
         "delivery": {
           "type": "string",
-          "const": "self"
+          "enum": [
+            "self",
+            "env",
+            "file"
+          ]
         },
         "paths": {
           "minItems": 1,
@@ -590,6 +626,18 @@
           "items": {
             "$ref": "#/$defs/PolicyPath"
           }
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fileMode": {
+          "type": "string",
+          "minLength": 1
         },
         "restartTargets": {
           "type": "array",
@@ -813,6 +861,23 @@
         "redirectTo": {
           "type": "string",
           "minLength": 1
+        },
+        "allowance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "per": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "clientAddress": {
+          "$ref": "#/$defs/ClientAddress"
         }
       },
       "required": [
@@ -825,7 +890,8 @@
       "enum": [
         "forward-auth",
         "security-headers",
-        "redirect"
+        "redirect",
+        "rate-limit"
       ]
     },
     "ContentPolicy": {
@@ -834,6 +900,13 @@
         "strict",
         "admin",
         "workflow"
+      ]
+    },
+    "ClientAddress": {
+      "type": "string",
+      "enum": [
+        "connection",
+        "cloudflare"
       ]
     },
     "ResolvedProcess": {
@@ -890,6 +963,12 @@
           "type": "string",
           "minLength": 1
         },
+        "gpu": {
+          "$ref": "#/$defs/ResolvedGpu"
+        },
+        "vpn": {
+          "$ref": "#/$defs/ResolvedVpn"
+        },
         "hardening": {
           "$ref": "#/$defs/HardeningClass"
         },
@@ -898,6 +977,9 @@
         },
         "api": {
           "$ref": "#/$defs/ResolvedApiAccess"
+        },
+        "internetEgress": {
+          "$ref": "#/$defs/InternetEgress"
         },
         "readiness": {
           "$ref": "#/$defs/ResolvedProbe"
@@ -915,6 +997,12 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ResolvedVolume"
+          }
+        },
+        "libraries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResolvedLibraryMount"
           }
         },
         "secrets": {
@@ -1080,6 +1168,192 @@
         "stop-start"
       ]
     },
+    "ResolvedGpu": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtimeClass": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "resource",
+        "runtimeClass"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedVpn": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "forwardedPort": {
+          "type": "boolean"
+        },
+        "environment": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "credential": {
+          "$ref": "#/$defs/ResolvedGrant"
+        }
+      },
+      "required": [
+        "image",
+        "memory",
+        "cpu",
+        "forwardedPort",
+        "environment",
+        "credential"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedGrant": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "generated": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "encoding": {
+                "type": "string",
+                "enum": [
+                  "hex",
+                  "base64",
+                  "base64url"
+                ]
+              },
+              "adopt": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path",
+                  "key"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "key",
+              "bytes",
+              "encoding"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "access": {
+          "$ref": "#/$defs/AccessTier"
+        },
+        "delivery": {
+          "$ref": "#/$defs/Delivery"
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fileMode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "restartTargets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "path",
+        "access",
+        "delivery"
+      ],
+      "additionalProperties": false
+    },
+    "AccessTier": {
+      "type": "string",
+      "enum": [
+        "read",
+        "self-renew",
+        "self-roll",
+        "custody"
+      ]
+    },
+    "Delivery": {
+      "type": "string",
+      "enum": [
+        "env",
+        "file",
+        "self"
+      ]
+    },
     "HardeningClass": {
       "type": "string",
       "enum": [
@@ -1173,6 +1447,19 @@
       "required": [
         "cidr",
         "port"
+      ],
+      "additionalProperties": false
+    },
+    "InternetEgress": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "reason"
       ],
       "additionalProperties": false
     },
@@ -1445,71 +1732,6 @@
       ],
       "additionalProperties": false
     },
-    "ResolvedGrant": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "keys": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "access": {
-          "$ref": "#/$defs/AccessTier"
-        },
-        "delivery": {
-          "$ref": "#/$defs/Delivery"
-        },
-        "destination": {
-          "type": "string",
-          "minLength": 1
-        },
-        "mountAt": {
-          "type": "string",
-          "minLength": 1
-        },
-        "fileMode": {
-          "type": "string",
-          "minLength": 1
-        },
-        "restartTargets": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [
-        "path",
-        "access",
-        "delivery"
-      ],
-      "additionalProperties": false
-    },
-    "AccessTier": {
-      "type": "string",
-      "enum": [
-        "read",
-        "self-renew",
-        "self-roll",
-        "custody"
-      ]
-    },
-    "Delivery": {
-      "type": "string",
-      "enum": [
-        "env",
-        "file",
-        "self"
-      ]
-    },
     "BackupPeer": {
       "type": "object",
       "properties": {
@@ -1532,6 +1754,65 @@
         "credential"
       ],
       "additionalProperties": false
+    },
+    "ResolvedLibraryMount": {
+      "type": "object",
+      "properties": {
+        "library": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "volume": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mountAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "access": {
+          "$ref": "#/$defs/LibraryAccess"
+        }
+      },
+      "required": [
+        "library",
+        "claim",
+        "volume",
+        "node",
+        "path",
+        "gid",
+        "mountAt",
+        "access"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryAccess": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write"
+      ]
     },
     "ResolvedAsset": {
       "type": "object",
@@ -1600,6 +1881,10 @@
           "minLength": 1
         },
         "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
           "type": "string",
           "minLength": 1
         },
@@ -1818,6 +2103,14 @@
           "type": "string",
           "pattern": "^\\d+(ms|s|m|h)$"
         },
+        "eligibleNodes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "egress": {
           "type": "array",
           "items": {
@@ -1836,7 +2129,170 @@
         "memory",
         "cpu",
         "deadline",
+        "eligibleNodes",
         "egress"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedCatalogJob": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deadline": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "eligibleNodes": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "catalog": {
+          "$ref": "#/$defs/ResolvedCatalog"
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EgressPeer"
+          }
+        }
+      },
+      "required": [
+        "identity",
+        "namespace",
+        "image",
+        "uid",
+        "gid",
+        "role",
+        "address",
+        "memory",
+        "cpu",
+        "deadline",
+        "eligibleNodes",
+        "catalog",
+        "egress"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedCatalog": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "connection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "admin": {
+          "$ref": "#/$defs/CatalogAdmin"
+        },
+        "databases": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CatalogDatabase"
+          }
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "connection",
+        "admin",
+        "databases"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogAdmin": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user": {
+          "type": "string",
+          "minLength": 1
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "user",
+        "password"
+      ],
+      "additionalProperties": false
+    },
+    "CatalogDatabase": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "owner",
+        "data"
       ],
       "additionalProperties": false
     },

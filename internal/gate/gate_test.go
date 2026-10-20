@@ -23,6 +23,8 @@ type cluster struct {
 	pods     map[string][]gate.Pod
 	// changed names the members whose Deployment no longer holds what their primary runs.
 	changed map[string]bool
+	// stopped names the stop-start Processes that have not started the version they hold.
+	stopped map[string]bool
 	// strangers makes every caller of the test server someone other than Flagger.
 	strangers bool
 	// away names the read or the write that fails, as an unreachable API server would fail it.
@@ -80,6 +82,13 @@ func (c *cluster) NewCopy(_ context.Context, _, process string) ([]gate.Pod, err
 		return nil, errAway
 	}
 	return c.pods[process], nil
+}
+
+func (c *cluster) Started(_ context.Context, _, process string) (bool, error) {
+	if c.away == "started" {
+		return false, errAway
+	}
+	return !c.stopped[process], nil
 }
 
 func (c *cluster) Serves(_ context.Context, _, process string) (bool, error) {
@@ -214,6 +223,47 @@ func TestAReleaseStartsOnceItsMigrationAndEveryPrepareProcessCompleted(t *testin
 			c := auth()
 			c.jobs = tc.jobs
 			got, err := gate.New(c).MayStart(t.Context(), asks())
+			if err != nil || got.Yes != tc.yes || got.Why != tc.why {
+				t.Fatalf("may-start = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+// authWaitingInputs is auth's inputs where the API requires two stop-start Processes of its own
+// Project, auth-cache and auth-mail, and the UI requires none.
+const authWaitingInputs = `{"analysis":{"interval":"30s","iterations":4,"threshold":3,"errorRate":"1%","latency":"500ms"},"deadline":"1800s","endpoint":"http://release-gate.delivery-system.svc.cluster.local:8080","members":[{"checks":["error-rate","latency"],"process":"auth-api","readiness":{"path":"/api/actuator/health/readiness","port":8081},"waitsFor":[{"application":"auth-cache","process":"auth-cache"},{"application":"auth-mail","process":"auth-mail"}]},{"process":"auth-ui","readiness":{"path":"/","port":8080}}]}`
+
+func TestAMemberStartsOnlyOnceEveryProcessItWaitsForHasStarted(t *testing.T) {
+	migration := gate.Job{Name: "auth-migration-9d2c4e6a8b0d", Component: "auth-migration", Complete: true}
+
+	cases := map[string]struct {
+		asker   string
+		stopped []string
+		jobs    []gate.Job
+		yes     bool
+		why     string
+	}{
+		"both started":                      {"auth-api", nil, nil, true, "the release has no migration and no prepare Process, and every Process it waits for has started"},
+		"both started, after the migration": {"auth-api", nil, []gate.Job{migration}, true, "the migration and every prepare Process completed, and every Process it waits for has started"},
+		"one still starting":                {"auth-api", []string{"auth-mail"}, nil, false, "auth-mail of auth-mail has not started the version it holds"},
+		// They are checked in the order the inputs name them.
+		"both still starting": {"auth-api", []string{"auth-mail", "auth-cache"}, nil, false, "auth-cache of auth-cache has not started the version it holds"},
+		// A member waits only for what it requires itself.
+		"the UI, while both are still starting": {"auth-ui", []string{"auth-cache", "auth-mail"}, nil, true, "the release has no migration and no prepare Process"},
+		// The steps come first: a provider is not read while the migration has not completed.
+		"the migration not done, both still starting": {"auth-api", []string{"auth-cache"}, []gate.Job{{Name: migration.Name, Component: migration.Component}}, false, "auth-migration-9d2c4e6a8b0d has not completed"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := auth()
+			c.inputs = authWaitingInputs
+			c.jobs = tc.jobs
+			c.stopped = map[string]bool{}
+			for _, process := range tc.stopped {
+				c.stopped[process] = true
+			}
+			got, err := gate.New(c).MayStart(t.Context(), asksAs(tc.asker))
 			if err != nil || got.Yes != tc.yes || got.Why != tc.why {
 				t.Fatalf("may-start = %+v, %v", got, err)
 			}
@@ -448,17 +498,19 @@ func TestTheGateFailsClosed(t *testing.T) {
 		away  string
 		tweak func(*gate.Question)
 	}{
-		"may-start when the Jobs cannot be read":      {(*gate.Gate).MayStart, "jobs", nil},
-		"may-start at something that is no revision":  {(*gate.Gate).MayStart, "", func(q *gate.Question) { q.Revision = "latest" }},
-		"may-start at a revision too short to name":   {(*gate.Gate).MayStart, "", func(q *gate.Question) { q.Revision = "sha256:9d2c" }},
-		"checks when the pods cannot be read":         {(*gate.Gate).Checks, "pods", nil},
-		"may-promote when a Canary cannot be read":    {(*gate.Gate).MayPromote, "canary", nil},
-		"may-start when its Canary cannot be read":    {(*gate.Gate).MayStart, "canary", nil},
-		"checks when its Canary cannot be read":       {(*gate.Gate).Checks, "canary", nil},
-		"may-promote when a Deployment is unreadable": {(*gate.Gate).MayPromote, "serves", nil},
+		"may-start when the Jobs cannot be read":              {(*gate.Gate).MayStart, "jobs", nil},
+		"may-start at something that is no revision":          {(*gate.Gate).MayStart, "", func(q *gate.Question) { q.Revision = "latest" }},
+		"may-start at a revision too short to name":           {(*gate.Gate).MayStart, "", func(q *gate.Question) { q.Revision = "sha256:9d2c" }},
+		"checks when the pods cannot be read":                 {(*gate.Gate).Checks, "pods", nil},
+		"may-promote when a Canary cannot be read":            {(*gate.Gate).MayPromote, "canary", nil},
+		"may-start when its Canary cannot be read":            {(*gate.Gate).MayStart, "canary", nil},
+		"checks when its Canary cannot be read":               {(*gate.Gate).Checks, "canary", nil},
+		"may-promote when a Deployment is unreadable":         {(*gate.Gate).MayPromote, "serves", nil},
+		"may-start when a Process it waits for is unreadable": {(*gate.Gate).MayStart, "started", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := auth()
+			c.inputs = authWaitingInputs
 			// The other member looks unchanged, so the barrier goes on to compare its Deployments.
 			c.canaries["auth-ui"] = of("Succeeded", "u1", "u1", 0)
 			c.away = tc.away

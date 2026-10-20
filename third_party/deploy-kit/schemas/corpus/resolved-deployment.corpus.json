@@ -541,6 +541,7 @@
             "memory": "64Mi",
             "cpu": "10m",
             "deadline": "120s",
+            "eligibleNodes": ["frankfurt-contabo-1"],
             "egress": [
               {
                 "rule": "secret-store",
@@ -577,6 +578,7 @@
             "memory": "64Mi",
             "cpu": "10m",
             "deadline": "120s",
+            "eligibleNodes": ["frankfurt-contabo-1"],
             "egress": [
               {
                 "rule": "secret-store",
