@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.2...v0.10.0) (2026-10-20)
+
+
+### Features
+
+* start a member only once the stop-start Processes it requires in its own Project have started ([#66](https://github.com/JorisJonkers-dev/delivery/issues/66)) ([dd46d17](https://github.com/JorisJonkers-dev/delivery/commit/dd46d1700e84ce7d46b7bd14db7f0a8a9959dd2d))
+
 ## [0.9.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.1...v0.9.2) (2026-10-18)
 
 
