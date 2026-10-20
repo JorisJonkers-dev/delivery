@@ -115,6 +115,10 @@ type Cluster interface {
 	Canary(ctx context.Context, namespace, process string) (Canary, error)
 	// NewCopy returns the pods of the member's new copy, never its primary's.
 	NewCopy(ctx context.Context, namespace, process string) ([]Pod, error)
+	// Started reports whether a Process that switches stop-start has started the version its
+	// Deployment now holds: the Deployment has observed its current spec, and every replica runs
+	// that spec and is available.
+	Started(ctx context.Context, namespace, process string) (bool, error)
 	// Serves reports whether the member's primary runs what its Deployment now holds: the same
 	// pod, but for the names Flagger gives the configuration it copies. It is read off the two
 	// Deployments, not off Flagger's record, which is a tick behind a Deployment that just changed.
@@ -231,7 +235,8 @@ func tag(revision string) (string, error) {
 const downInfix = "-down-"
 
 // MayStart answers whether the member's new version may start: once the Application's migration
-// and every prepare Process of this revision have completed.
+// and every prepare Process of this revision have completed, and every Process the member waits
+// for has started the version it holds.
 //
 // The inputs do not name a release's steps, so the gate reads them off the Application's Jobs:
 // every identity that has ever run a release Job of it is a step, and its Job of this revision
@@ -271,10 +276,53 @@ func (g *Gate) MayStart(ctx context.Context, q Question) (Answer, error) {
 			return no("%s has not completed", job.Name), nil
 		}
 	}
-	if len(steps) == 0 {
-		return yes("the release has no migration and no prepare Process"), nil
+	// A stop-start Process the member requires in its own Project stops before it starts again,
+	// and is released with the member: its new version would start against nothing
+	// (deploy-kit spec/v1/55-delivery.md#release-order).
+	providers := waitsFor(read, q.Process)
+	waiting, held, err := g.unstarted(ctx, q.Namespace, providers)
+	if err != nil {
+		return Answer{}, err
 	}
-	return yes("the migration and every prepare Process completed"), nil
+	if held {
+		return no("%s of %s has not started the version it holds", waiting.Process, waiting.Application), nil
+	}
+	why := "the migration and every prepare Process completed"
+	if len(steps) == 0 {
+		why = "the release has no migration and no prepare Process"
+	}
+	if len(providers) > 0 {
+		why += ", and every Process it waits for has started"
+	}
+	return yes(why), nil
+}
+
+// unstarted is the first of the providers that has not started the version it holds, in the
+// order the inputs name them; held is false where every one has.
+func (g *Gate) unstarted(ctx context.Context, namespace string, providers []resolved.GateProvider) (
+	waiting resolved.GateProvider, held bool, err error,
+) {
+	for _, provider := range providers {
+		started, err := g.cluster.Started(ctx, namespace, provider.Process)
+		if err != nil {
+			return resolved.GateProvider{}, false, fmt.Errorf("gate: read %s of %s: %w", provider.Process, provider.Application, err)
+		}
+		if !started {
+			return provider, true, nil
+		}
+	}
+	return resolved.GateProvider{}, false, nil
+}
+
+// waitsFor is what the asking member waits for before its new version starts, as its inputs
+// name it.
+func waitsFor(read reading, process string) []resolved.GateProvider {
+	for _, m := range read.gate.Members {
+		if m.Process == process {
+			return m.WaitsFor
+		}
+	}
+	return nil
 }
 
 // stepsOf is every step of a release, by the identity it runs as, with its Job of the revision

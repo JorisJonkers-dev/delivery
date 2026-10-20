@@ -266,6 +266,55 @@ func TestAMemberServesItsRenderWhenItsPrimaryRunsWhatItsDeploymentHolds(t *testi
 	}
 }
 
+func TestAStopStartProcessHasStartedOnceEveryReplicaRunsWhatItsDeploymentHolds(t *testing.T) {
+	two := int32(2)
+	// The embedding model of the same Project: generation 3, observed, two of two updated and
+	// available, and no pod of the version before it left.
+	rolledOut := func() *appsv1.Deployment {
+		d := deployment("auth-cache", corev1.Container{Name: "auth-cache", Image: "cache@sha256:aa"})
+		d.Generation = 3
+		d.Spec.Replicas = &two
+		d.Status = appsv1.DeploymentStatus{ObservedGeneration: 3, Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2}
+		return d
+	}
+	started := func(d *appsv1.Deployment) (bool, error) {
+		return kube([]runtime.Object{d}).Started(t.Context(), ns, "auth-cache")
+	}
+	if done, err := started(rolledOut()); err != nil || !done {
+		t.Fatalf("a Deployment that rolled out = %v, %v", done, err)
+	}
+	unset := rolledOut()
+	unset.Spec.Replicas = nil
+	unset.Status = appsv1.DeploymentStatus{ObservedGeneration: 3, Replicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1}
+	if done, err := started(unset); err != nil || !done {
+		t.Fatalf("an unset count is one: %v, %v", done, err)
+	}
+	ahead := rolledOut()
+	ahead.Status.ObservedGeneration = 4
+	if done, err := started(ahead); err != nil || !done {
+		t.Fatalf("a status observed at a later generation still describes this spec: %v, %v", done, err)
+	}
+
+	for name, change := range map[string]func(*appsv1.DeploymentStatus){
+		"its new spec not observed yet":  func(s *appsv1.DeploymentStatus) { s.ObservedGeneration = 2 },
+		"a replica of the old version":   func(s *appsv1.DeploymentStatus) { s.UpdatedReplicas = 1 },
+		"a replica not available yet":    func(s *appsv1.DeploymentStatus) { s.AvailableReplicas = 1 },
+		"an old pod not gone yet":        func(s *appsv1.DeploymentStatus) { s.Replicas = 3 },
+		"stopped, its new pod not there": func(s *appsv1.DeploymentStatus) { *s = appsv1.DeploymentStatus{ObservedGeneration: 3} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := rolledOut()
+			change(&d.Status)
+			if done, err := started(d); err != nil || done {
+				t.Fatalf("a Deployment with %s reads as started: %v, %v", name, done, err)
+			}
+		})
+	}
+	if _, err := kube(nil).Started(t.Context(), ns, "auth-cache"); err == nil {
+		t.Fatal("a Process with no Deployment has started nothing the gate can read")
+	}
+}
+
 func TestTheNewCopyIsThePodsNamedForTheProcessNeverThePrimarys(t *testing.T) {
 	k := kube([]runtime.Object{
 		pod("auth-api-7c9d-x", labels("auth-api", "auth-api"), corev1.ConditionTrue, 0, 0),

@@ -277,6 +277,25 @@ func (k Kube) Start(ctx context.Context, namespace string, job Job) error {
 // ConfigMap and Secret it copies for it.
 const primarySuffix = "-primary"
 
+// Started implements Cluster: the Process's own Deployment, which has no primary, since a
+// Process that stops to start again is not switched by Flagger.
+func (k Kube) Started(ctx context.Context, namespace, process string) (bool, error) {
+	deployment, err := k.Client.AppsV1().Deployments(namespace).Get(ctx, process, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	// An unset count is one, as the Deployment controller reads it.
+	wanted := int32(1)
+	if deployment.Spec.Replicas != nil {
+		wanted = *deployment.Spec.Replicas
+	}
+	status := deployment.Status
+	return status.ObservedGeneration >= deployment.Generation &&
+		status.Replicas == wanted &&
+		status.UpdatedReplicas == wanted &&
+		status.AvailableReplicas == wanted, nil
+}
+
 // Serves implements Cluster: the member's Deployment and its primary run the same thing.
 func (k Kube) Serves(ctx context.Context, namespace, process string) (bool, error) {
 	deployments := k.Client.AppsV1().Deployments(namespace)
