@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.10.0...v0.11.0) (2026-10-21)
+
+
+### Features
+
+* the images lock records each image's software version ([#68](https://github.com/JorisJonkers-dev/delivery/issues/68)) ([a959cd7](https://github.com/JorisJonkers-dev/delivery/commit/a959cd7b930d5223a0c1617c3815a8b3499d6be8))
+
+
+### Bug Fixes
+
+* **deps:** update minor and patch dependencies ([#20](https://github.com/JorisJonkers-dev/delivery/issues/20)) ([49d4f8f](https://github.com/JorisJonkers-dev/delivery/commit/49d4f8fbee1cf0adfe4875a1bee5db00b5020799))
+
 ## [0.10.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.9.2...v0.10.0) (2026-10-20)
 
 
