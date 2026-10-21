@@ -177,6 +177,28 @@ func TestPostgresDumpsThroughPgDumpall(t *testing.T) {
 	}
 }
 
+// A Rollback dumps the Project's own database with the Project's own credential
+// (deploy-kit spec/v1/30-deliverables.md#a-rollbacks-backup), which reaches that database alone.
+func TestPostgresDumpsTheOneDatabaseARunNamesThroughPgDump(t *testing.T) {
+	at := claim(t)
+	command := filepath.Join(t.TempDir(), "pg_dump")
+	//nolint:gosec // G306: an executable stand-in
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho \"-- $* as $PGUSER@$PGHOST:$PGPORT\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	written, _, err := run(context.Background(), []string{"postgres"}, env(map[string]string{
+		"BACKUP_RETAIN": "1", "BACKUP_ROLLBACK": "39645885317", "BACKUP_DATABASE": "auth_db",
+		"BACKUP_HOST": "postgres.data-system.svc.cluster.local", "BACKUP_PORT": "5432",
+		"PGUSER": "v-auth-owner", "PGPASSWORD": "secret", "PG_DUMP": command,
+	}), at, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dump := gunzipped(t, written); dump != "-- --no-password --dbname=auth_db as v-auth-owner@postgres.data-system.svc.cluster.local:5432\n" {
+		t.Fatalf("dumped %q", dump)
+	}
+}
+
 func TestRabbitmqReadsTheDefinitions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"vhosts":[]}`)
