@@ -98,7 +98,8 @@ applications:
             the Release Gate answers Flagger from what the cluster holds, so it reads each gated
             Application's inputs, Canaries, Deployments, Jobs and pods; it finds the gated
             Applications by listing ConfigMaps, keeps each one's release record in a ConfigMap of
-            its own, and unsuspends the migration Jobs it starts
+            its own, unsuspends the migration Jobs it starts, and deletes a gated Application's
+            Vault sync objects of an older revision once it serves the new one
           rules:
             - group: core
               objects: [configmaps]
@@ -115,6 +116,9 @@ applications:
             - group: flagger.app
               objects: [canaries]
               verbs: [get]
+            - group: secrets.hashicorp.com
+              objects: [vaultauths, vaultstaticsecrets, vaultdynamicsecrets]
+              verbs: [list, delete]
         probes:
           readiness: { path: /readyz, port: 8080 }
           liveness: { path: /healthz, port: 8080 }

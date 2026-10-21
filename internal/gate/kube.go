@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,9 +32,9 @@ const (
 // Canaries is where Flagger's Canary objects live.
 var Canaries = schema.GroupVersionResource{Group: "flagger.app", Version: "v1beta1", Resource: "canaries"} //nolint:gochecknoglobals // a constant in all but type
 
-// Kube is the gate's cluster. It gets and lists five kinds, and writes two things: the release
+// Kube is the gate's cluster. It gets and lists eight kinds, writes two things, the release
 // record, a ConfigMap of the gate's own in its own namespace, and `suspend` on a release Job of
-// the render's that it starts
+// the render's that it starts, and deletes one: a sync object of an older revision
 // (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 type Kube struct {
 	Client  kubernetes.Interface
@@ -389,4 +391,58 @@ func (k Kube) NewCopy(ctx context.Context, namespace, process string) ([]Pod, er
 		pods = append(pods, Pod{Name: pod.Name, Ready: ready, Restarts: restarts})
 	}
 	return pods, nil
+}
+
+// The Vault sync objects the render writes, by kind
+// (deploy-kit spec/v1/30-deliverables.md#vault-configuration-is-rendered-not-applied).
+var syncKinds = map[string]schema.GroupVersionResource{ //nolint:gochecknoglobals // a constant in all but type
+	"VaultAuth":          {Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultauths"},
+	"VaultStaticSecret":  {Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultstaticsecrets"},
+	"VaultDynamicSecret": {Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultdynamicsecrets"},
+}
+
+// annotationRevision is where the render writes the revision that rendered a kept sync object.
+const annotationRevision = "estate.jorisjonkers.dev/revision"
+
+// SyncObjects implements Cluster: every sync object labelled as part of the Application that names
+// the revision that rendered it. One that names none is not kept by the render, and not the gate's.
+func (k Kube) SyncObjects(ctx context.Context, namespace, application string) ([]SyncObject, error) {
+	var objects []SyncObject
+	for _, kind := range slices.Sorted(maps.Keys(syncKinds)) {
+		list, err := k.Dynamic.Resource(syncKinds[kind]).Namespace(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labelPartOf + "=" + application + "," + labelManagedBy + "=" + renderedBy,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("gate: list %s: %w", kind, err)
+		}
+		for _, item := range list.Items {
+			revision := item.GetAnnotations()[annotationRevision]
+			if revision == "" {
+				continue
+			}
+			objects = append(objects, SyncObject{
+				Kind: kind, Name: item.GetName(), Revision: revision,
+				UID: string(item.GetUID()), Version: item.GetResourceVersion(),
+			})
+		}
+	}
+	return objects, nil
+}
+
+// Sweep implements Cluster. The preconditions make it delete the object as it was read: one Flux
+// has since rewritten to the current revision, or replaced, is left alone, and one already gone
+// is no error.
+func (k Kube) Sweep(ctx context.Context, namespace string, object SyncObject) error {
+	resource, ok := syncKinds[object.Kind]
+	if !ok {
+		return fmt.Errorf("gate: %s is not a sync object", object.Kind)
+	}
+	uid, version := types.UID(object.UID), object.Version
+	err := k.Dynamic.Resource(resource).Namespace(namespace).Delete(ctx, object.Name, metav1.DeleteOptions{
+		Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &version},
+	})
+	if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+		return nil
+	}
+	return err
 }
