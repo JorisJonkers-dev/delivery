@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.11.0...v0.12.0) (2026-10-21)
+
+
+### Features
+
+* **gate:** delete a gated Application's sync objects of an older revision once it serves ([#71](https://github.com/JorisJonkers-dev/delivery/issues/71)) ([feec363](https://github.com/JorisJonkers-dev/delivery/commit/feec363465ed56530989436b68d0ed1f17ff9a52))
+
 ## [0.11.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.10.0...v0.11.0) (2026-10-21)
 
 
