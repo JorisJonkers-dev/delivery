@@ -83,13 +83,16 @@ jobs:
             echo "images:"
           } > images.lock.yml
           # build <image> <docker build options...>: build and push one
-          # multi-arch image, and append its lock entry.
+          # multi-arch image, labelled with this release as the version of the
+          # software inside it, and append its lock entry with that version
+          # (JorisJonkers-dev/workspace#140).
           build() {
             local app="$1" image="ghcr.io/jorisjonkers-dev/delivery/$1" digest user
             shift
             docker buildx build . "$@" \
               --platform linux/amd64,linux/arm64 \
               --build-arg VERSION="$VERSION" \
+              --label org.opencontainers.image.version="$VERSION" \
               --tag "${image}:${TAG}" \
               --metadata-file "${app}.json" \
               --push
@@ -107,6 +110,7 @@ jobs:
               echo "    digest: \"${digest}\""
               echo "    uid: ${user%%:*}"
               echo "    gid: ${user##*:}"
+              echo "    version: \"${VERSION}\""
             } >> images.lock.yml
             echo "published ${image}@${digest} as ${user}"
           }
@@ -126,6 +130,8 @@ jobs:
           # image itself, whose config names it only as `nobody`.
           image="${FLAGGER%%:*}"
           digest="${FLAGGER##*@}"
+          flagger_version="${FLAGGER%@*}"
+          flagger_version="${flagger_version##*:}"
           uid="$(docker run --rm --platform linux/amd64 --entrypoint id "$FLAGGER" -u)"
           gid="$(docker run --rm --platform linux/amd64 --entrypoint id "$FLAGGER" -g)"
           case "${uid}:${gid}" in
@@ -137,6 +143,7 @@ jobs:
             echo "    digest: \"${digest}\""
             echo "    uid: ${uid}"
             echo "    gid: ${gid}"
+            echo "    version: \"${flagger_version}\""
           } >> images.lock.yml
           echo "locked ${FLAGGER} as ${uid}:${gid}"
           cat images.lock.yml >> "$GITHUB_STEP_SUMMARY"
@@ -156,7 +163,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: JorisJonkers-dev/github-workflows/.github/workflows/publish-fragment.yml@8637ee1224dfefd807d9b8be616eeb59f94ba126 # v0.23.0
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/publish-fragment.yml@79e57122f7ed1fb442c90a7487f861c5d1465ec6 # v0.34.0
     with:
       project-file: deploy/delivery.project.yml
       version: ${{ needs.release-please.outputs.tag_name }}
