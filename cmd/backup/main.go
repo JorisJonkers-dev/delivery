@@ -6,7 +6,8 @@
 //
 //   - files reads the volume, mounted read-only at /data, into a gzipped tar.
 //   - postgres runs pg_dumpall against the server at BACKUP_HOST and BACKUP_PORT, as PGUSER with
-//     PGPASSWORD, into a gzipped SQL file.
+//     PGPASSWORD, into a gzipped SQL file. Handed BACKUP_DATABASE, it dumps that one database with
+//     pg_dump instead: a Rollback's dump of a Project's own database, with its own credential.
 //   - rabbitmq reads the broker's definitions from the management API at BACKUP_HOST and
 //     BACKUP_PORT, as RABBITMQ_USERNAME with RABBITMQ_PASSWORD.
 //
@@ -121,6 +122,11 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 			if value := getenv(key); value != "" {
 				env = append(env, key+"="+value)
 			}
+		}
+		if database := getenv("BACKUP_DATABASE"); database != "" {
+			return backup.Generation{Method: "postgres", Extension: ".sql.gz"}, func(w io.Writer) error {
+				return backup.Dump(ctx, or(getenv("PG_DUMP"), "pg_dump"), env, w, "--dbname="+database)
+			}, nil
 		}
 		return backup.Generation{Method: "postgres", Extension: ".sql.gz"}, func(w io.Writer) error {
 			return backup.Dump(ctx, or(getenv("PG_DUMPALL"), "pg_dumpall"), env, w)

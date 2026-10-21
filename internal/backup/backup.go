@@ -227,12 +227,13 @@ func add(archive *tar.Writer, path, name string, entry fs.DirEntry) error {
 	return err
 }
 
-// Dump runs pg_dumpall, which reads libpq's own variables (PGHOST, PGPORT, PGUSER, PGPASSWORD),
-// and writes its output gzipped.
-func Dump(ctx context.Context, command string, env []string, w io.Writer) error {
+// Dump runs pg_dumpall, or pg_dump with the arguments that name its database, which read libpq's
+// own variables (PGHOST, PGPORT, PGUSER, PGPASSWORD), and writes the output gzipped.
+func Dump(ctx context.Context, command string, env []string, w io.Writer, args ...string) error {
 	compressed := gzip.NewWriter(w)
 	var stderr strings.Builder
-	dump := exec.CommandContext(ctx, command, "--no-password")
+	//nolint:gosec // G204: the command is the method's own pg_dump or pg_dumpall, and args name one database
+	dump := exec.CommandContext(ctx, command, append([]string{"--no-password"}, args...)...)
 	dump.Env = env
 	dump.Stdout = compressed
 	dump.Stderr = &stderr
