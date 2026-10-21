@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.12.0...v0.13.0) (2026-10-21)
+
+
+### Features
+
+* **backup:** dump the one database a run names, with pg_dump ([#73](https://github.com/JorisJonkers-dev/delivery/issues/73)) ([84d3ffa](https://github.com/JorisJonkers-dev/delivery/commit/84d3ffa9e2565fa35c814b8f47ab2bed78ab9f09))
+
 ## [0.12.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.11.0...v0.12.0) (2026-10-21)
 
 
