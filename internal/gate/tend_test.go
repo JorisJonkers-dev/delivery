@@ -100,6 +100,39 @@ func TestTheGateRecordsWhatAnApplicationServesAndWritesItOnce(t *testing.T) {
 	}
 }
 
+// A grant a release drops is synced until the Application serves the release
+// (deploy-kit spec/v1/55-delivery.md#a-removed-grant-outlives-its-release).
+func TestOnceAnApplicationServesTheGateDeletesItsSyncObjectsOfEveryOtherRevision(t *testing.T) {
+	c := auth()
+	c.canaries = map[string]gate.Canary{
+		"auth-api": of("Succeeded", "a2", "a2", 4),
+		"auth-ui":  of("Initialized", "u1", "u1", 0),
+	}
+	c.record = &gate.Record{Serving: earlier, Promoted: map[string]string{"auth-api": "a1", "auth-ui": "u1"}, Pinned: revision, Since: first}
+	c.synced = []gate.SyncObject{
+		{Kind: "VaultAuth", Name: "auth-api", Revision: revision},
+		{Kind: "VaultStaticSecret", Name: "auth-api-database", Revision: earlier},
+		{Kind: "VaultDynamicSecret", Name: "auth-api-database-creds-auth-owner", Revision: revision},
+	}
+
+	tend(t, c)
+
+	if !slices.Equal(c.swept, []string{"VaultStaticSecret/auth-api-database"}) {
+		t.Fatalf("swept = %v", c.swept)
+	}
+}
+
+func TestNoSyncObjectIsDeletedWhileAReleaseIsUnderWay(t *testing.T) {
+	c := releasing()
+	c.synced = []gate.SyncObject{{Kind: "VaultStaticSecret", Name: "auth-api-database", Revision: earlier}}
+
+	tend(t, c)
+
+	if c.swept != nil {
+		t.Fatalf("swept = %v", c.swept)
+	}
+}
+
 func TestAnApplicationServesOnlyWhenEveryPrimaryRunsWhatTheRenderHolds(t *testing.T) {
 	cases := map[string]func(*cluster){
 		"a member still analysed":            func(c *cluster) { c.canaries["auth-api"] = of("Progressing", "a2", "a1", 1) },

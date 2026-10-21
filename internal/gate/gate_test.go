@@ -36,6 +36,9 @@ type cluster struct {
 	started []string
 	// also is every Application listed beside auth's.
 	also []gate.Gated
+	// synced is auth's Vault sync objects, and swept every one the gate deleted, in order.
+	synced []gate.SyncObject
+	swept  []string
 }
 
 var errAway = errors.New("the API server is away")
@@ -129,6 +132,21 @@ func (c *cluster) Start(_ context.Context, _ string, job gate.Job) error {
 		return errAway
 	}
 	c.started = append(c.started, job.Name)
+	return nil
+}
+
+func (c *cluster) SyncObjects(context.Context, string, string) ([]gate.SyncObject, error) {
+	if c.away == "sync-objects" {
+		return nil, errAway
+	}
+	return c.synced, nil
+}
+
+func (c *cluster) Sweep(_ context.Context, _ string, object gate.SyncObject) error {
+	if c.away == "sweep" {
+		return errAway
+	}
+	c.swept = append(c.swept, object.Kind+"/"+object.Name)
 	return nil
 }
 

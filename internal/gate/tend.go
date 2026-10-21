@@ -253,7 +253,10 @@ func (g *Gate) tend(ctx context.Context, a Gated, now time.Time) (*Held, *Refuse
 		return nil, nil, err
 	}
 	if serving {
-		return nil, nil, g.record(ctx, r, Record{Serving: r.pinned, Promoted: r.promoted()})
+		if err := g.record(ctx, r, Record{Serving: r.pinned, Promoted: r.promoted()}); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, g.sweep(ctx, r)
 	}
 	// A release of the pinned revision is under way, or held.
 	if r, err = g.note(ctx, r, now); err != nil {
@@ -279,6 +282,25 @@ func (g *Gate) tend(ctx context.Context, a Gated, now time.Time) (*Held, *Refuse
 		return held, nil, err
 	}
 	return held, r.refusal(condition), nil
+}
+
+// sweep deletes the Application's sync objects of every revision but the one it now serves. Every
+// primary runs that revision, so none reads what they sync any more
+// (deploy-kit spec/v1/55-delivery.md#a-removed-grant-outlives-its-release).
+func (g *Gate) sweep(ctx context.Context, r release) error {
+	objects, err := g.cluster.SyncObjects(ctx, r.Namespace, r.Application)
+	if err != nil {
+		return err
+	}
+	for _, object := range objects {
+		if object.Revision == r.pinned {
+			continue
+		}
+		if err := g.cluster.Sweep(ctx, r.Namespace, object); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // note records when the gate first saw the pinned revision applied and not yet serving.

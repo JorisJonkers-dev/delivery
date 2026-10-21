@@ -133,6 +133,25 @@ type Cluster interface {
 	// Start unsuspends a release Job, as it was read. It is the one field of a rendered object the
 	// gate writes.
 	Start(ctx context.Context, namespace string, job Job) error
+	// SyncObjects returns the Application's Vault sync objects that name the revision that
+	// rendered them: those the render keeps past the release that drops them.
+	SyncObjects(ctx context.Context, namespace, application string) ([]SyncObject, error)
+	// Sweep deletes a sync object as it was read, and nothing that changed since: the one kind of
+	// object the gate deletes.
+	Sweep(ctx context.Context, namespace string, object SyncObject) error
+}
+
+// SyncObject is one VaultAuth, VaultStaticSecret or VaultDynamicSecret of a gated Application,
+// and the revision that rendered it
+// (deploy-kit spec/v1/55-delivery.md#a-removed-grant-outlives-its-release).
+type SyncObject struct {
+	Kind     string
+	Name     string
+	Revision string
+	// UID and Version are what the cluster held when it was read, so a sweep deletes nothing
+	// Flux has rewritten since.
+	UID     string
+	Version string
 }
 
 // Gate answers Flagger's three questions.

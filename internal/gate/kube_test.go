@@ -8,10 +8,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -78,7 +80,12 @@ func rendered(at string) []any {
 }
 
 func kube(objects []runtime.Object, canaries ...runtime.Object) gate.Kube {
-	kinds := map[schema.GroupVersionResource]string{gate.Canaries: "CanaryList"}
+	kinds := map[schema.GroupVersionResource]string{
+		gate.Canaries: "CanaryList",
+		{Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultauths"}:          "VaultAuthList",
+		{Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultstaticsecrets"}:  "VaultStaticSecretList",
+		{Group: "secrets.hashicorp.com", Version: "v1beta1", Resource: "vaultdynamicsecrets"}: "VaultDynamicSecretList",
+	}
 	return gate.Kube{
 		Client:  fake.NewClientset(objects...),
 		Dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), kinds, canaries...),
@@ -409,5 +416,85 @@ func TestFlaggerIsThePodsOfTheDeliveryProjectsFlaggerProcess(t *testing.T) {
 	client.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, errAway })
 	if _, err := (gate.Kube{Client: client}).Flagger(t.Context()); !errors.Is(err, errAway) {
 		t.Fatalf("Flagger's pods, unreadable: %v", err)
+	}
+}
+
+// synced is a sync object as the render writes it for an Application, kept past its release where
+// it names a revision.
+func synced(kind, name, application, revision string) *unstructured.Unstructured {
+	o := &unstructured.Unstructured{}
+	o.SetAPIVersion("secrets.hashicorp.com/v1beta1")
+	o.SetKind(kind)
+	o.SetNamespace(ns)
+	o.SetName(name)
+	o.SetUID(types.UID("uid-" + name))
+	o.SetResourceVersion("7")
+	o.SetLabels(map[string]string{"app.kubernetes.io/part-of": application, "app.kubernetes.io/managed-by": "deploy-kit"})
+	if revision != "" {
+		o.SetAnnotations(map[string]string{"estate.jorisjonkers.dev/revision": revision})
+	}
+	return o
+}
+
+func TestTheSyncObjectsAreTheApplicationsKeptVaultObjectsWithTheRevisionThatRenderedThem(t *testing.T) {
+	k := kube(nil,
+		synced("VaultAuth", "auth-api", "auth", revision),
+		synced("VaultStaticSecret", "auth-api-database", "auth", earlier),
+		synced("VaultDynamicSecret", "auth-api-creds", "auth", revision),
+		// Pruned as usual, so not the gate's: it names no revision.
+		synced("VaultStaticSecret", "auth-ui-config", "auth", ""),
+		synced("VaultStaticSecret", "mail-api-database", "mail", earlier),
+	)
+
+	got, err := k.SyncObjects(t.Context(), ns, "auth")
+
+	want := []gate.SyncObject{
+		{Kind: "VaultAuth", Name: "auth-api", Revision: revision, UID: "uid-auth-api", Version: "7"},
+		{Kind: "VaultDynamicSecret", Name: "auth-api-creds", Revision: revision, UID: "uid-auth-api-creds", Version: "7"},
+		{Kind: "VaultStaticSecret", Name: "auth-api-database", Revision: earlier, UID: "uid-auth-api-database", Version: "7"},
+	}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("sync objects = %+v, %v", got, err)
+	}
+}
+
+func TestASweepDeletesTheSyncObjectOnlyAsItWasRead(t *testing.T) {
+	k := kube(nil, synced("VaultStaticSecret", "auth-api-database", "auth", earlier))
+	fake := k.Dynamic.(*dynamicfake.FakeDynamicClient)
+	var sent *metav1.Preconditions
+	fake.PrependReactor("delete", "vaultstaticsecrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		sent = action.(k8stesting.DeleteActionImpl).DeleteOptions.Preconditions
+		return false, nil, nil
+	})
+	read := gate.SyncObject{Kind: "VaultStaticSecret", Name: "auth-api-database", Revision: earlier, UID: "uid-auth-api-database", Version: "7"}
+
+	if err := k.Sweep(t.Context(), ns, read); err != nil {
+		t.Fatal(err)
+	}
+
+	if sent == nil || *sent.UID != "uid-auth-api-database" || *sent.ResourceVersion != "7" {
+		t.Fatalf("preconditions = %+v", sent)
+	}
+	if got, _ := k.SyncObjects(t.Context(), ns, "auth"); len(got) != 0 {
+		t.Fatalf("left = %+v", got)
+	}
+}
+
+func TestASweepOfAnObjectChangedOrGoneSinceItWasReadIsNoError(t *testing.T) {
+	k := kube(nil, synced("VaultStaticSecret", "auth-api-database", "auth", earlier))
+	read := gate.SyncObject{Kind: "VaultStaticSecret", Name: "auth-api-database", UID: "uid-auth-api-database", Version: "7"}
+	fake := k.Dynamic.(*dynamicfake.FakeDynamicClient)
+	fake.PrependReactor("delete", "vaultstaticsecrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "secrets.hashicorp.com", Resource: "vaultstaticsecrets"}, "auth-api-database", errors.New("rewritten"))
+	})
+
+	if err := k.Sweep(t.Context(), ns, read); err != nil {
+		t.Fatalf("changed since: %v", err)
+	}
+	if err := kube(nil).Sweep(t.Context(), ns, read); err != nil {
+		t.Fatalf("gone since: %v", err)
+	}
+	if err := kube(nil).Sweep(t.Context(), ns, gate.SyncObject{Kind: "Secret", Name: "x"}); err == nil {
+		t.Fatal("swept a Secret")
 	}
 }
