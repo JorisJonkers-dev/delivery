@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.13.0...v0.13.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **reporter:** report a release pinned again at the same commit on its own Deployment ([#76](https://github.com/JorisJonkers-dev/delivery/issues/76)) ([76dbe3b](https://github.com/JorisJonkers-dev/delivery/commit/76dbe3b38d9394b3da0c65b13f5e6e4de7302574))
+
 ## [0.13.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.12.0...v0.13.0) (2026-10-21)
 
 
