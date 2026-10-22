@@ -387,3 +387,33 @@ type lying struct{ reporter.GitHub }
 func (lying) Find(context.Context, string, string, string) (githubapp.Deployment, bool, error) {
 	return githubapp.Deployment{ID: 404, Project: "notes", Version: "1.4.2", Created: began}, true, nil
 }
+
+// A release pinned again at the same version and commit, as a toolkit change moves every pin,
+// is a new Rollout on a new Deployment: the one before it being done says nothing of it.
+func TestARolloutPinnedAgainAtTheSameReleaseIsReportedOnItsOwnDeployment(t *testing.T) {
+	github := githubtest.New(t, "")
+	c := &cluster{}
+	first := unit(pinned)
+	before := deploy(github, first)
+	c.set(first)
+	r := newReporter(t, github, c)
+	ctx := t.Context()
+	if wrote, err := r.Pass(ctx); err != nil || !wrote {
+		t.Fatalf("wrote %v, %v for the first pin", wrote, err)
+	}
+
+	again := unit(earlier)
+	again.Pinned = earlier
+	after := deploy(github, again)
+	c.set(again)
+	if wrote, err := r.Pass(ctx); err != nil || !wrote {
+		t.Fatalf("wrote %v, %v for the release pinned again", wrote, err)
+	}
+	equal(t, states(github.Statuses(after.ID)), []string{
+		"in_progress: notes 1.4.2 pinned",
+		"success: notes 1.4.2 applied by Flux and ready",
+	})
+	if got := states(github.Statuses(before.ID)); strings.Count(strings.Join(got, "\n"), "success: ") != 1 {
+		t.Fatalf("the first pin's Deployment was reported again: %v", got)
+	}
+}
