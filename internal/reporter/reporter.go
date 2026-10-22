@@ -90,7 +90,9 @@ func (r *Reporter) Pass(ctx context.Context) (bool, error) {
 			r.Log.WarnContext(ctx, "a unit's Rollout cannot be reported", "unit", u.Name, "error", err)
 			continue
 		}
-		key := u.Rollout.Repository + "@" + u.Rollout.SHA + "/" + u.Rollout.Environment
+		// A release pinned again at the same commit, as a toolkit change moves every pin, is a
+		// new Rollout with a Deployment of its own, so the render it pins is part of its key.
+		key := u.Rollout.Repository + "@" + u.Rollout.SHA + "/" + u.Rollout.Environment + "#" + u.Pinned
 		seen[key] = true
 		written, err := r.report(ctx, key, u)
 		if err != nil {
