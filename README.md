@@ -81,7 +81,7 @@ and the Application revision, and the gate reads the rest from the cluster.
 | Webhook | Path | Yes when |
 |---------|------|----------|
 | `confirm-rollout` | `POST /may-start` | every step of the release has completed: its migration and its prepare Processes, each a Job named for the revision. An Application that has never run one starts at once |
-| `rollout` | `POST /checks` | the member's new copy has a pod, every one is ready, and none has restarted |
+| `rollout` | `POST /checks` | the member's new copy has a pod, every one is ready, and none has restarted; and the gate's own requests to it stay under the platform's error rate and p95 latency |
 | `confirm-promotion` | `POST /may-promote` | every member of the Application has passed its analysis for this revision or did not change in it: the barrier |
 
 Flagger reads a 2xx as yes and anything else as no, so the status is the answer: `200` yes, `409`
@@ -135,10 +135,24 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   commands, arguments and variables. Flagger's record alone is a tick behind a Deployment that
   just changed. The member that asks is held to its own record: waiting, or analysed with every
   iteration counted.
-- **`error-rate` and `latency` are not measured yet.** A blue-green copy receives no user traffic
-  before it is promoted, so its own request metrics hold only probes. Until a traffic source and
-  a metric source are decided (JorisJonkers-dev/delivery#12), a member that carries those checks
-  is held to the same two facts as one that does not.
+- **It sends its own traffic.** Flagger switches blue-green without sending the new copy a
+  user's request, so its own request metrics hold only probes, and a static runtime exports none.
+  On each iteration the gate therefore requests, at the member's Canary service
+  (`<process>-canary.<namespace>.svc.cluster.local` on the Canary's service port), every path the
+  Canary's webhooks hand it: each Route path and the readiness path, each once, three times over.
+  It needs no metric source and works for every runtime (JorisJonkers-dev/delivery#12).
+  - A request fails on a `5xx` or on no answer within 2 seconds, and on nothing else: a `401`, a
+    `404` or a redirect is the member answering, and passes. The gate never follows a redirect.
+  - The iteration fails when the failed share is over the platform's `errorRate`, when the p95
+    of the answered requests is over its `latency`, or when no request succeeded: no data is no.
+    Both thresholds come from the release-gate inputs, the same for every Application.
+  - A path is requested only if it is URL path segments, each opened by one `/`. The schema
+    guarantees that already; the gate holds API access, so it checks again, and a path that is
+    not one, or a Canary with no service port, is a question it cannot answer.
+  - A member whose pods are not all ready is not requested, and a member the Canary hands no
+    path is held to its pods alone.
+  - The metric checks a Runtime Profile derives (`error-rate`, `latency` on a member) do not
+    change this: every member is held to the same requests. Metric-based checks come later.
 - **It starts no prepare Process yet.** deploy-kit renders none, so there is no Job to start.
 
 ### Between questions

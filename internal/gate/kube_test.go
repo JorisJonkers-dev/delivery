@@ -2,6 +2,7 @@ package gate_test
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -79,6 +80,15 @@ func rendered(at string) []any {
 	return []any{webhook("may-start", "auth", at), webhook("checks", "auth", at), webhook("may-promote", "auth", at)}
 }
 
+// handing gives each webhook the paths and the readiness path the render hands the gate.
+func handing(webhooks []any, paths, readiness string) []any {
+	for _, w := range webhooks {
+		metadata, _ := w.(map[string]any)["metadata"].(map[string]any)
+		metadata["paths"], metadata["readiness"] = paths, readiness
+	}
+	return webhooks
+}
+
 func kube(objects []runtime.Object, canaries ...runtime.Object) gate.Kube {
 	kinds := map[schema.GroupVersionResource]string{
 		gate.Canaries: "CanaryList",
@@ -149,10 +159,20 @@ func TestAJobIsReadWithItsIdentityAndHowItEnded(t *testing.T) {
 }
 
 func TestACanaryIsReadWithWhatItsWebhooksCarryAndWhatFlaggerRecorded(t *testing.T) {
+	api := canary("auth-api", handing(rendered(revision), "/api /api/v1/users/register", "/api/actuator/health/readiness"),
+		map[string]any{"phase": "WaitingPromotion", "lastAppliedSpec": "a2", "lastPromotedSpec": "a1", "iterations": int64(4)})
+	api.Object["spec"].(map[string]any)["service"] = map[string]any{"port": int64(8080)}
 	k := kube(nil,
-		canary("auth-api", rendered(revision),
-			map[string]any{"phase": "WaitingPromotion", "lastAppliedSpec": "a2", "lastPromotedSpec": "a1", "iterations": int64(4)}),
+		api,
 		canary("auth-ui", rendered(revision), nil),
+		canary("two-path-sets", []any{
+			handing([]any{webhook("may-start", "auth", revision)}, "/api", "")[0],
+			handing([]any{webhook("checks", "auth", revision)}, "/", "")[0],
+		}, nil),
+		canary("two-readiness-paths", []any{
+			handing([]any{webhook("may-start", "auth", revision)}, "/", "/ready")[0],
+			handing([]any{webhook("checks", "auth", revision)}, "/", "/")[0],
+		}, nil),
 		// A Canary whose webhooks disagree, or carry too little, is not one the render wrote.
 		canary("two-revisions", []any{webhook("may-start", "auth", revision), webhook("checks", "auth", earlier)}, nil),
 		canary("two-applications", []any{webhook("may-start", "auth", revision), webhook("checks", "mail", revision)}, nil),
@@ -163,14 +183,17 @@ func TestACanaryIsReadWithWhatItsWebhooksCarryAndWhatFlaggerRecorded(t *testing.
 		canary("no-webhooks", nil, nil),
 	)
 
-	want := gate.Canary{Application: "auth", Revision: revision, Phase: "WaitingPromotion", Applied: "a2", Promoted: "a1", Iterations: 4}
-	if got, err := k.Canary(t.Context(), ns, "auth-api"); err != nil || got != want {
+	want := gate.Canary{
+		Application: "auth", Revision: revision, Phase: "WaitingPromotion", Applied: "a2", Promoted: "a1", Iterations: 4,
+		Port: 8080, Paths: []string{"/api", "/api/v1/users/register"}, Readiness: "/api/actuator/health/readiness",
+	}
+	if got, err := k.Canary(t.Context(), ns, "auth-api"); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("canary = %+v, %v", got, err)
 	}
-	if got, err := k.Canary(t.Context(), ns, "auth-ui"); err != nil || got != (gate.Canary{Application: "auth", Revision: revision}) {
+	if got, err := k.Canary(t.Context(), ns, "auth-ui"); err != nil || !reflect.DeepEqual(got, gate.Canary{Application: "auth", Revision: revision}) {
 		t.Fatalf("a Canary Flagger has not touched = %+v, %v", got, err)
 	}
-	for _, name := range []string{"two-revisions", "two-applications", "revision-on-one", "no-revision", "no-application", "not-webhooks", "no-webhooks", "absent"} {
+	for _, name := range []string{"two-path-sets", "two-readiness-paths", "two-revisions", "two-applications", "revision-on-one", "no-revision", "no-application", "not-webhooks", "no-webhooks", "absent"} {
 		if got, err := k.Canary(t.Context(), ns, name); err == nil {
 			t.Fatalf("%s: read as %+v, want an error", name, got)
 		}
