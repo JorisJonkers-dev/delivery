@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/JorisJonkers-dev/delivery/internal/gate"
 	"github.com/JorisJonkers-dev/delivery/internal/reporter"
 )
 
@@ -154,5 +155,75 @@ func TestSettledIsFlaggerSayingTheMemberServesWhatItLastAnalysed(t *testing.T) {
 		if got := reporter.Settled(c.member); got != c.want {
 			t.Errorf("%s: Settled = %v", name, got)
 		}
+	}
+}
+
+// r2 is the revision the release renders its Applications at, and r1 the one before.
+const r2, r1 = "sha256:r2", "sha256:r1"
+
+// of is a member of an Application promoted at r2.
+func of(application, process string) reporter.Member {
+	m := promoted(process)
+	m.Namespace, m.Application, m.Revision = "notes-system", application, r2
+	return m
+}
+
+func TestAPromotedReleaseEndsOnWhatTheGatesWarmupMet(t *testing.T) {
+	warmed := gate.Warmup{Revision: r2}
+	cases := map[string]struct {
+		members []reporter.Member
+		warmups map[string]gate.Warmup
+		want    reporter.Stage
+	}{
+		"no gate read: promotion ends it": {
+			[]reporter.Member{of("notes", "notes-api")},
+			nil,
+			reporter.Stage{State: "success", Description: "notes 1.4.2 promoted"},
+		},
+		"not warmed yet": {
+			[]reporter.Member{of("notes", "notes-api"), of("notes", "notes-web")},
+			map[string]gate.Warmup{},
+			reporter.Stage{State: "in_progress", Description: "promoted; the Release Gate is warming up notes"},
+		},
+		"warmed at an earlier revision": {
+			[]reporter.Member{of("notes", "notes-api")},
+			map[string]gate.Warmup{"notes-system/notes": {Revision: r1}},
+			reporter.Stage{State: "in_progress", Description: "promoted; the Release Gate is warming up notes"},
+		},
+		"warmed": {
+			[]reporter.Member{of("notes", "notes-api"), of("notes", "notes-web")},
+			map[string]gate.Warmup{"notes-system/notes": warmed},
+			reporter.Stage{State: "success", Description: "notes 1.4.2 promoted and warmed up"},
+		},
+		"a warmup that met a 5xx": {
+			[]reporter.Member{of("notes", "notes-api")},
+			map[string]gate.Warmup{"notes-system/notes": {Revision: r2, Failed: "https://notes.jorisjonkers.dev/ answered 502"}},
+			reporter.Stage{State: "failure", Description: "notes promoted, but its warmup failed: https://notes.jorisjonkers.dev/ answered 502"},
+		},
+		"one Application warmed, another not": {
+			[]reporter.Member{of("notes", "notes-api"), of("notes-admin", "notes-admin")},
+			map[string]gate.Warmup{"notes-system/notes": warmed},
+			reporter.Stage{State: "in_progress", Description: "promoted; the Release Gate is warming up notes-admin"},
+		},
+		"a failed warmup at an earlier revision is not this release's": {
+			[]reporter.Member{of("notes", "notes-api")},
+			map[string]gate.Warmup{"notes-system/notes": {Revision: r1, Failed: "https://notes.jorisjonkers.dev/ answered 502"}},
+			reporter.Stage{State: "in_progress", Description: "promoted; the Release Gate is warming up notes"},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			u := unit(pinned, c.members...)
+			u.Warmups = c.warmups
+			if got, write := reporter.StageOf(u, began); !write || got != c.want {
+				t.Fatalf("StageOf = %+v, %v; want %+v", got, write, c.want)
+			}
+		})
+	}
+	// A member still under analysis is reported as such, whatever the gate says.
+	u := unit(pinned, reporter.Member{Process: "notes-api", Phase: "Progressing", Iteration: 1, Iterations: 4, Application: "notes", Revision: r2})
+	u.Warmups = map[string]gate.Warmup{}
+	if got, _ := reporter.StageOf(u, began); got.Description != "applied by Flux; notes-api checks 1/4" {
+		t.Fatalf("StageOf = %+v", got)
 	}
 }

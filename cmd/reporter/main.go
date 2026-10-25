@@ -33,6 +33,9 @@ const (
 	defaultAPI       = "https://api.github.com"
 	defaultAddr      = ":8080"
 	defaultNamespace = "flux-system"
+	// The Release Gate's address, which the delivery project derives: the Reporter reads each
+	// release's warmup there.
+	defaultGate = "http://release-gate.delivery-system.svc.cluster.local:8080"
 	// Flagger moves a Canary on its own analysis interval and sends the Reporter nothing, so the
 	// Reporter looks at least this often.
 	defaultInterval = 30 * time.Second
@@ -146,6 +149,7 @@ func configure(logger *slog.Logger, getenv func(string) string, readFile func(st
 
 	return &reporter.Reporter{
 		Cluster: reporter.Kube{Client: client, Dynamic: objects, Namespace: orDefault(getenv("FLUX_NAMESPACE"), defaultNamespace)},
+		Gate:    reporter.GateReleases{URL: orDefault(getenv("GATE_URL"), defaultGate), HTTP: &http.Client{Timeout: 10 * time.Second}},
 		GitHub: githubapp.Deployments{App: githubapp.App{
 			API:            orDefault(getenv("GITHUB_API_URL"), defaultAPI),
 			AppID:          getenv("GITHUB_APP_ID"),

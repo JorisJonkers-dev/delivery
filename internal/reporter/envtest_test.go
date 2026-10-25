@@ -132,7 +132,9 @@ func TestTheReporterInACluster(t *testing.T) {
 	create(t, adminObjects, gate.Canaries, map[string]any{
 		"apiVersion": "flagger.app/v1beta1", "kind": "Canary",
 		"metadata": map[string]any{"name": "notes-api", "namespace": "notes-system"},
-		"spec":     map[string]any{"analysis": map[string]any{"iterations": int64(5)}},
+		"spec": map[string]any{"analysis": map[string]any{"iterations": int64(5), "webhooks": []any{
+			map[string]any{"name": "checks", "type": "rollout", "url": "http://gate/checks", "metadata": map[string]any{"application": "notes", "process": "notes-api", "revision": "sha256:r2"}},
+		}}},
 		"status": map[string]any{
 			"phase": "Progressing", "iterations": int64(2), "lastAppliedSpec": "h2", "lastPromotedSpec": "h1",
 			"lastTransitionTime": "2026-10-14T17:40:00Z",
@@ -180,12 +182,14 @@ func TestTheReporterInACluster(t *testing.T) {
 			t.Fatalf("members = %+v", notes.Members)
 		}
 		api, web := notes.Members[0], notes.Members[1]
-		if api.Process != "notes-api" || api.Phase != "Progressing" || api.Iteration != 2 || api.Iterations != 5 ||
+		if api.Namespace != "notes-system" || api.Application != "notes" || api.Revision != "sha256:r2" ||
+			api.Process != "notes-api" || api.Phase != "Progressing" || api.Iteration != 2 || api.Iterations != 5 ||
 			api.Message != "New revision detected, progressing canary analysis." || api.Serves ||
 			!api.Transitioned.Equal(time.Date(2026, 10, 14, 17, 40, 0, 0, time.UTC)) {
 			t.Fatalf("notes-api = %+v", api)
 		}
-		if web.Process != "notes-web" || !reporter.Settled(web) || !web.Serves {
+		// A Canary with no webhooks names no Application.
+		if web.Process != "notes-web" || web.Application != "" || !reporter.Settled(web) || !web.Serves {
 			t.Fatalf("notes-web = %+v", web)
 		}
 		stage, _ := reporter.StageOf(notes, began)

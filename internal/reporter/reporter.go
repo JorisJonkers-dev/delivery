@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/JorisJonkers-dev/delivery/internal/gate"
 	"github.com/JorisJonkers-dev/delivery/internal/githubapp"
 )
 
@@ -15,6 +16,12 @@ import (
 // pin and its Canaries.
 type Cluster interface {
 	Units(ctx context.Context) ([]Unit, error)
+}
+
+// Gate is what the Reporter reads of the Release Gate: what it holds of every gated Application,
+// the outcome of each warmup among it.
+type Gate interface {
+	Releases(ctx context.Context) (gate.Releases, error)
 }
 
 // GitHub is where the Reporter writes.
@@ -47,9 +54,12 @@ var (
 // Reporter writes each stage a unit's release reaches to its Rollout's Deployment.
 type Reporter struct {
 	Cluster Cluster
-	GitHub  GitHub
-	Now     func() time.Time
-	Log     *slog.Logger
+	// Gate is read once a pass for each release's warmup; nil reads none, and a release is then
+	// through once every member is.
+	Gate   Gate
+	GitHub GitHub
+	Now    func() time.Time
+	Log    *slog.Logger
 
 	// rollouts is what the Reporter knows of each Rollout it has seen, by repository, commit and
 	// environment. Only the loop touches it.
@@ -78,6 +88,7 @@ func (r *Reporter) Pass(ctx context.Context) (bool, error) {
 	if r.rollouts == nil {
 		r.rollouts = map[string]*rollout{}
 	}
+	r.addWarmups(ctx, units)
 	seen := map[string]bool{}
 	wrote := false
 	var errs []error
@@ -107,6 +118,29 @@ func (r *Reporter) Pass(ctx context.Context) (bool, error) {
 		}
 	}
 	return wrote, errors.Join(errs...)
+}
+
+// addWarmups gives every unit what the Release Gate's warmup met, by namespace and Application,
+// where the Reporter reads a gate. A gate that does not answer is one whose warmups are not known
+// yet: every release it gates waits on them, and none is failed for it.
+func (r *Reporter) addWarmups(ctx context.Context, units []Unit) {
+	if r.Gate == nil {
+		return
+	}
+	warmups := map[string]gate.Warmup{}
+	for i := range units {
+		units[i].Warmups = warmups
+	}
+	releases, err := r.Gate.Releases(ctx)
+	if err != nil {
+		r.Log.WarnContext(ctx, "the Release Gate's releases cannot be read", "error", err)
+		return
+	}
+	for _, release := range releases.Releases {
+		if release.Warmup != nil {
+			warmups[release.Namespace+"/"+release.Application] = *release.Warmup
+		}
+	}
 }
 
 func (r *Reporter) report(ctx context.Context, key string, u Unit) (bool, error) {
