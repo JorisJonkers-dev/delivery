@@ -119,10 +119,10 @@ func holds(conditions []batchv1.JobCondition, kind batchv1.JobConditionType) boo
 	return false
 }
 
-var errNotTheRenders = errors.New("gate: the Canary's webhooks do not carry one Application and one revision")
+var errNotTheRenders = errors.New("gate: the Canary's webhooks do not carry one Application, one revision and one set of paths")
 
-// Canary implements Cluster. The render gives every webhook of a Canary the same Application and
-// revision; a Canary whose webhooks disagree, or carry neither, is not one the gate can read.
+// Canary implements Cluster. The render gives every webhook of a Canary the same metadata; a
+// Canary whose webhooks disagree, or carry no Application and revision, is not one the gate can read.
 func (k Kube) Canary(ctx context.Context, namespace, process string) (Canary, error) {
 	object, err := k.Dynamic.Resource(Canaries).Namespace(namespace).Get(ctx, process, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -133,17 +133,25 @@ func (k Kube) Canary(ctx context.Context, namespace, process string) (Canary, er
 	}
 	webhooks, _, _ := unstructured.NestedSlice(object.Object, "spec", "analysis", "webhooks")
 	var read Canary
+	var paths string
 	for i, webhook := range webhooks {
 		fields, _ := webhook.(map[string]any)
 		application, _, _ := unstructured.NestedString(fields, "metadata", "application")
 		revision, _, _ := unstructured.NestedString(fields, "metadata", "revision")
+		routes, _, _ := unstructured.NestedString(fields, "metadata", "paths")
+		readiness, _, _ := unstructured.NestedString(fields, "metadata", "readiness")
 		if i == 0 {
-			read.Application, read.Revision = application, revision
+			read.Application, read.Revision, paths, read.Readiness = application, revision, routes, readiness
 		}
-		if application != read.Application || revision != read.Revision {
+		if application != read.Application || revision != read.Revision || routes != paths || readiness != read.Readiness {
 			return Canary{}, errNotTheRenders
 		}
 	}
+	if paths != "" {
+		read.Paths = strings.Fields(paths)
+	}
+	port, _, _ := unstructured.NestedInt64(object.Object, "spec", "service", "port")
+	read.Port = int(port)
 	if read.Application == "" || read.Revision == "" {
 		return Canary{}, errNotTheRenders
 	}

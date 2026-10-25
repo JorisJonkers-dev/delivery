@@ -91,6 +91,13 @@ type Canary struct {
 	Promoted string
 	// Iterations is how many analysis iterations Flagger has counted for the member.
 	Iterations int
+	// Port is the port of the Services Flagger generates for the member, its Canary service's
+	// among them.
+	Port int
+	// Paths and Readiness are what the Canary's webhooks hand the gate to request: the path of
+	// every Route to the member, and the path its readiness is asked on.
+	Paths     []string
+	Readiness string
 	// Transitioned is when Flagger last moved the member to another phase.
 	Transitioned time.Time
 }
@@ -157,6 +164,7 @@ type SyncObject struct {
 // Gate answers Flagger's three questions.
 type Gate struct {
 	cluster Cluster
+	traffic Traffic
 
 	mu sync.Mutex
 	// askedAt is the revision each member last asked a question at, by namespace and Process.
@@ -168,9 +176,19 @@ type Gate struct {
 	served served
 }
 
+// Option changes how a Gate is built.
+type Option func(*Gate)
+
+// WithTraffic has the Gate send its own requests through traffic rather than HTTPTraffic.
+func WithTraffic(traffic Traffic) Option { return func(g *Gate) { g.traffic = traffic } }
+
 // New returns a Gate reading cluster.
-func New(cluster Cluster) *Gate {
-	return &Gate{cluster: cluster, askedAt: map[string]string{}, served: served{now: time.Now}}
+func New(cluster Cluster, options ...Option) *Gate {
+	g := &Gate{cluster: cluster, traffic: HTTPTraffic(), askedAt: map[string]string{}, served: served{now: time.Now}}
+	for _, option := range options {
+		option(g)
+	}
+	return g
 }
 
 func (g *Gate) noteAsked(q Question) {
@@ -362,11 +380,11 @@ func stepsOf(jobs []Job, revision string) map[string]*Job {
 	return steps
 }
 
-// Checks answers one analysis iteration for the member: every pod of its new copy is ready, and
-// none has restarted. What `error-rate` and `latency` measure is not decided yet, so a member
-// that carries them is held to the same two facts as one that does not.
+// Checks answers one analysis iteration for the member: every pod of its new copy is ready, none
+// has restarted, and the gate's own requests to the new copy stay under the platform's
+// thresholds (traffic.go). A member the Canary hands no path to request is held to its pods alone.
 func (g *Gate) Checks(ctx context.Context, q Question) (Answer, error) {
-	_, current, err := g.ask(ctx, q)
+	read, current, err := g.ask(ctx, q)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -388,7 +406,16 @@ func (g *Gate) Checks(ctx context.Context, q Question) (Answer, error) {
 			return no("%s is not ready", pod.Name), nil
 		}
 	}
-	return yes("every pod of the new copy is ready and none restarted"), nil
+	const healthy = "every pod of the new copy is ready and none restarted"
+	targets := targetsOf(read.canary)
+	if len(targets) == 0 {
+		return yes(healthy), nil
+	}
+	measured, err := g.measure(ctx, q, read, targets)
+	if err != nil || !measured.Yes {
+		return measured, err
+	}
+	return yes(healthy + ", and " + measured.Why), nil
 }
 
 // Flagger's phases, as its Canary status spells them.
