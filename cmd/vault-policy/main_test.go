@@ -20,7 +20,7 @@ const (
 )
 
 // vault answers the job's calls: a login as policy-admin, an empty Vault but for one stale
-// policy, and every write accepted.
+// policy and another Project's, and every write accepted.
 func vault(t *testing.T, writes *[]string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func vault(t *testing.T, writes *[]string) *httptest.Server {
 			}
 			_, _ = io.WriteString(w, `{"auth":{"client_token":"t"}}`)
 		case r.Method == "LIST" && path == "sys/policies/acl":
-			_, _ = io.WriteString(w, `{"data":{"keys":["default","old-system-worker"]}}`)
+			_, _ = io.WriteString(w, `{"data":{"keys":["default","notes-system-worker","other-system-worker"]}}`)
 		case r.Method == http.MethodGet || r.Method == "LIST":
 			http.NotFound(w, r)
 		default:
@@ -74,7 +74,7 @@ func TestARunWritesTheRenderAndReportsWhatItNoLongerNames(t *testing.T) {
 	if strings.Join(writes, ", ") != "PUT sys/policies/acl/notes-system-notes-api, POST auth/kubernetes/role/notes-system-notes-api" {
 		t.Fatalf("wrote %v", writes)
 	}
-	for _, want := range []string{`"written":["policy notes-system-notes-api","role notes-system-notes-api"]`, `"stale":["policy old-system-worker"]`, `"level":"WARN"`} {
+	for _, want := range []string{`"written":["policy notes-system-notes-api","role notes-system-notes-api"]`, `"stale":["policy notes-system-worker"]`, `"level":"WARN"`} {
 		if !strings.Contains(logged.String(), want) {
 			t.Fatalf("the log lacks %s: %s", want, logged.String())
 		}

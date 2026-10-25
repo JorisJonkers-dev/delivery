@@ -387,12 +387,15 @@ func TestARunWritesWhatVaultDoesNotHoldAsRenderedAndLeavesTheRest(t *testing.T) 
 	}
 }
 
-func TestWhatTheRenderNoLongerNamesIsReportedAndNeverDeleted(t *testing.T) {
+func TestWhatTheRenderNoLongerNamesInItsNamespaceIsReportedAndNeverDeleted(t *testing.T) {
 	f := newFakeVault(t)
-	// What an earlier render wrote, and what the platform holds for itself.
+	// What an earlier render wrote for this Project, another Project's own, and what the
+	// platform holds for itself.
+	f.policies["data-system-exporter"] = `{"path":{}}`
+	f.roles["data-system-exporter"] = vaultpolicy.Role{}
+	f.roles["data-system-worker"] = vaultpolicy.Role{}
 	f.policies["notes-system-notes-api"] = `{"path":{}}`
 	f.roles["notes-system-notes-api"] = vaultpolicy.Role{}
-	f.roles["old-system-worker"] = vaultpolicy.Role{}
 	for _, fixture := range []string{"default", "root", "policy-admin", "-system-x", "x-system-"} {
 		f.policies[fixture] = `{"path":{}}`
 		f.roles[fixture] = vaultpolicy.Role{}
@@ -406,11 +409,11 @@ func TestWhatTheRenderNoLongerNamesIsReportedAndNeverDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"policy notes-system-notes-api", "role notes-system-notes-api", "role old-system-worker"}
+	want := []string{"policy data-system-exporter", "role data-system-exporter", "role data-system-worker"}
 	if !slices.Equal(report.Stale, want) {
 		t.Fatalf("stale = %v, want %v", report.Stale, want)
 	}
-	if _, held := f.policies["notes-system-notes-api"]; !held || len(f.roles) != 8 {
+	if _, held := f.policies["data-system-exporter"]; !held || len(f.roles) != 9 {
 		t.Fatalf("the job deleted something: %v %v", mapKeys(f.policies), mapKeys(f.roles))
 	}
 
