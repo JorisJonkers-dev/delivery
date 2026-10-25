@@ -248,8 +248,9 @@ any Application that holds a grant, and the unit hands it the documents as files
   role never names a policy that is not there. A role that gained a namespace selector is not
   as rendered: it is written again, without one.
 - **It never deletes.** What Vault holds under a name of the render's form, `<project>-system-…`,
-  that the render no longer names is logged as stale, for a human to remove. The platform's own
-  fixtures have no such name and are never reported.
+  in a namespace its documents are in, that the documents no longer name is logged as stale, for a
+  human to remove. Another Project's names are that Project's job's to report, and the platform's
+  own fixtures have no such name and are never reported.
 - **A call that fails stops the run**, with exit 1, which stops the Reconcile Unit: no
   Application that holds a grant starts against policies Vault does not hold.
 

@@ -93,10 +93,12 @@ func TestAgainstADevVaultThePoliciesAndRolesMatchTheRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// What an earlier render wrote for an identity this one no longer names.
+	// What an earlier render wrote for an identity this one no longer names, and another
+	// Project's policy, which is its own job's to report.
+	admin(t, vault, http.MethodPut, "sys/policies/acl/data-system-worker", `{"policy":"{\"path\":{}}"}`)
+	admin(t, vault, http.MethodPost, "auth/kubernetes/role/data-system-worker",
+		`{"bound_service_account_names":["worker"],"bound_service_account_namespaces":["data-system"],"token_policies":["data-system-worker"]}`)
 	admin(t, vault, http.MethodPut, "sys/policies/acl/notes-system-notes-api", `{"policy":"{\"path\":{}}"}`)
-	admin(t, vault, http.MethodPost, "auth/kubernetes/role/notes-system-notes-api",
-		`{"bound_service_account_names":["notes-api"],"bound_service_account_namespaces":["notes-system"],"token_policies":["notes-system-notes-api"]}`)
 
 	first, err := vaultpolicy.Apply(t.Context(), vault, documents)
 	if err != nil {
@@ -134,11 +136,11 @@ func TestAgainstADevVaultThePoliciesAndRolesMatchTheRender(t *testing.T) {
 	if err != nil || len(second.Written) != 0 || second.Unchanged != 4 {
 		t.Fatalf("second run = %+v, %v", second, err)
 	}
-	if !slices.Equal(second.Stale, []string{"policy notes-system-notes-api", "role notes-system-notes-api"}) {
+	if !slices.Equal(second.Stale, []string{"policy data-system-worker", "role data-system-worker"}) {
 		t.Fatalf("stale = %v", second.Stale)
 	}
-	admin(t, vault, http.MethodGet, "sys/policies/acl/notes-system-notes-api", "")
-	admin(t, vault, http.MethodGet, "auth/kubernetes/role/notes-system-notes-api", "")
+	admin(t, vault, http.MethodGet, "sys/policies/acl/data-system-worker", "")
+	admin(t, vault, http.MethodGet, "auth/kubernetes/role/data-system-worker", "")
 
 	// A selector someone gave a role admits namespaces the render never named: the next run
 	// writes the role again, and Vault holds it without one.

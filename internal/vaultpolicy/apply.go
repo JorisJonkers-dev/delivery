@@ -12,16 +12,10 @@ type Report struct {
 	Written []string
 	// Unchanged counts the documents Vault already held as rendered.
 	Unchanged int
-	// Stale are the names Vault holds in the render's own form that the render no longer
-	// names. The job never deletes: these are for a human to remove.
+	// Stale are the names Vault holds in the render's own form, in a namespace the documents
+	// are in, that the documents no longer name. Another Project's names are its own job's to
+	// report. The job never deletes: these are for a human to remove.
 	Stale []string
-}
-
-// rendered reports whether a name has the form the render gives one: `<project>-system-<identity>`.
-// It is how the job tells what the render once wrote from the platform's own fixtures.
-func rendered(name string) bool {
-	_, _, named := identityOf(name)
-	return named
 }
 
 // Apply writes every document Vault does not already hold as rendered: the policy first, so a
@@ -29,9 +23,11 @@ func rendered(name string) bool {
 // starts against policies Vault does not hold.
 func Apply(ctx context.Context, vault Vault, documents []Document) (Report, error) {
 	var report Report
-	names := map[string]bool{}
+	names, namespaces := map[string]bool{}, map[string]bool{}
 	for _, d := range documents {
 		names[d.Name] = true
+		namespace, _, _ := identityOf(d.Name)
+		namespaces[namespace] = true
 		for _, write := range []func(context.Context, Vault, Document) (string, error){writePolicy, writeRole} {
 			wrote, err := write(ctx, vault, d)
 			switch {
@@ -44,7 +40,7 @@ func Apply(ctx context.Context, vault Vault, documents []Document) (Report, erro
 			}
 		}
 	}
-	stale, err := staleIn(ctx, vault, names)
+	stale, err := staleIn(ctx, vault, names, namespaces)
 	report.Stale = stale
 	return report, err
 }
@@ -81,8 +77,9 @@ func writeRole(ctx context.Context, vault Vault, d Document) (string, error) {
 	return "role " + d.Name, nil
 }
 
-// staleIn lists what Vault holds in the render's form under a name the render no longer has.
-func staleIn(ctx context.Context, vault Vault, names map[string]bool) ([]string, error) {
+// staleIn lists what Vault holds in the render's form, in one of the namespaces, under a name
+// the render no longer has.
+func staleIn(ctx context.Context, vault Vault, names, namespaces map[string]bool) ([]string, error) {
 	var stale []string
 	for _, listed := range []struct{ kind, path string }{{"policy", "sys/policies/acl"}, {"role", authMount + "/role"}} {
 		held, err := vault.list(ctx, listed.path)
@@ -90,7 +87,8 @@ func staleIn(ctx context.Context, vault Vault, names map[string]bool) ([]string,
 			return nil, fmt.Errorf("vaultpolicy: list what Vault holds: %w", err)
 		}
 		for _, name := range held {
-			if rendered(name) && !names[name] {
+			namespace, _, named := identityOf(name)
+			if named && namespaces[namespace] && !names[name] {
 				stale = append(stale, listed.kind+" "+name)
 			}
 		}
