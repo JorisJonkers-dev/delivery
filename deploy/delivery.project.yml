@@ -93,6 +93,14 @@ applications:
         placement:
           memory: 64Mi
           cpu: 25m
+        # The warmup after promotion crosses the internet to the edge, at a public address only;
+        # its checks during analysis reach each member by the member label instead.
+        egress:
+          to: internet
+          reason: >-
+            after promotion the gate requests a released Application's paths through each of its
+            public hostnames, so the request crosses the edge to the new primary and warms the
+            caches nearest the cluster
         api:
           reason: >-
             the Release Gate answers Flagger from what the cluster holds, so it reads each gated

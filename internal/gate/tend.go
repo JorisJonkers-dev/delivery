@@ -47,6 +47,8 @@ type Record struct {
 	// it first saw it: the start of that release as far as the gate can tell.
 	Pinned string    `json:"pinned,omitempty"`
 	Since  time.Time `json:"since,omitzero"`
+	// Warmup is what the warmup of the serving revision met: absent until the gate has warmed it.
+	Warmup *Warmup `json:"warmup,omitempty"`
 }
 
 // ErrNoRecord is what Cluster.Record returns where the gate has recorded nothing yet.
@@ -253,10 +255,7 @@ func (g *Gate) tend(ctx context.Context, a Gated, now time.Time) (*Held, *Refuse
 		return nil, nil, err
 	}
 	if serving {
-		if err := g.record(ctx, r, Record{Serving: r.pinned, Promoted: r.promoted()}); err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, g.sweep(ctx, r)
+		return nil, nil, g.serving(ctx, r)
 	}
 	// A release of the pinned revision is under way, or held.
 	if r, err = g.note(ctx, r, now); err != nil {
@@ -282,6 +281,20 @@ func (g *Gate) tend(ctx context.Context, a Gated, now time.Time) (*Held, *Refuse
 		return held, nil, err
 	}
 	return held, r.refusal(condition), nil
+}
+
+// serving records that the Application serves the pinned revision, warms that revision up the
+// first round it serves, and sweeps what older revisions synced. A revision is warmed once and
+// never again: a warmup that failed fails the Rollout and rolls nothing back.
+func (g *Gate) serving(ctx context.Context, r release) error {
+	next := Record{Serving: r.pinned, Promoted: r.promoted(), Warmup: r.record.Warmup}
+	if next.Warmup == nil || next.Warmup.Revision != r.pinned {
+		next.Warmup = g.warm(ctx, r)
+	}
+	if err := g.record(ctx, r, next); err != nil {
+		return err
+	}
+	return g.sweep(ctx, r)
 }
 
 // sweep deletes the Application's sync objects of every revision but the one it now serves. Every
@@ -329,7 +342,9 @@ func (r release) refusal(condition string) *Refused {
 
 // record writes the Application's record where it differs from what the cluster holds.
 func (g *Gate) record(ctx context.Context, r release, next Record) error {
-	if next.Serving == r.record.Serving && next.Pinned == r.record.Pinned && next.Since.Equal(r.record.Since) && maps.Equal(next.Promoted, r.record.Promoted) {
+	sameWarmup := (next.Warmup == nil && r.record.Warmup == nil) ||
+		(next.Warmup != nil && r.record.Warmup != nil && *next.Warmup == *r.record.Warmup)
+	if next.Serving == r.record.Serving && next.Pinned == r.record.Pinned && next.Since.Equal(r.record.Since) && maps.Equal(next.Promoted, r.record.Promoted) && sameWarmup {
 		return nil
 	}
 	if err := g.cluster.SetRecord(ctx, r.Namespace, r.Application, next); err != nil {

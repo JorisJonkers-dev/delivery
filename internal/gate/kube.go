@@ -133,22 +133,26 @@ func (k Kube) Canary(ctx context.Context, namespace, process string) (Canary, er
 	}
 	webhooks, _, _ := unstructured.NestedSlice(object.Object, "spec", "analysis", "webhooks")
 	var read Canary
-	var paths string
+	var paths, hostnames string
 	for i, webhook := range webhooks {
 		fields, _ := webhook.(map[string]any)
 		application, _, _ := unstructured.NestedString(fields, "metadata", "application")
 		revision, _, _ := unstructured.NestedString(fields, "metadata", "revision")
 		routes, _, _ := unstructured.NestedString(fields, "metadata", "paths")
 		readiness, _, _ := unstructured.NestedString(fields, "metadata", "readiness")
+		hosts, _, _ := unstructured.NestedString(fields, "metadata", "hostnames")
 		if i == 0 {
-			read.Application, read.Revision, paths, read.Readiness = application, revision, routes, readiness
+			read.Application, read.Revision, paths, read.Readiness, hostnames = application, revision, routes, readiness, hosts
 		}
-		if application != read.Application || revision != read.Revision || routes != paths || readiness != read.Readiness {
+		if application != read.Application || revision != read.Revision || routes != paths || readiness != read.Readiness || hosts != hostnames {
 			return Canary{}, errNotTheRenders
 		}
 	}
 	if paths != "" {
 		read.Paths = strings.Fields(paths)
+	}
+	if hostnames != "" {
+		read.Hostnames = strings.Fields(hostnames)
 	}
 	port, _, _ := unstructured.NestedInt64(object.Object, "spec", "service", "port")
 	read.Port = int(port)

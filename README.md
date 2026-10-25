@@ -112,8 +112,8 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
   Flagger's edge to the gate is the only one declared for its webhooks.
 - **It serves what it holds, read-only, at `GET /releases`.** For every gated Application,
   ordered by namespace and Application: its members and its migration, from the release-gate
-  inputs, and its record (`serving`, `pinned`, `since`). An Application whose inputs or record do
-  not read says so in `unreadable` and keeps the rest from failing with it. A thousand
+  inputs, and its record (`serving`, `pinned`, `since`, `warmup`). An Application whose inputs or
+  record do not read says so in `unreadable` and keeps the rest from failing with it. A thousand
   Applications at most, with `truncated` set beyond that. This is how the estate dashboard reads
   both without any ConfigMap access of its own (JorisJonkers-dev/estate-dashboard#15): it declares
   an edge to the gate's `http` surface, which its derived policy then admits. Reading it starts
@@ -170,6 +170,22 @@ gated Application itself (`internal/gate/tend.go`): each ConfigMap the render wr
   one it cannot answer from. No rendered object says what
   serves once a new render is applied, so this is the gate's one piece of state, and it survives
   a restart. When it first sees a revision applied and not yet serving, it notes that and when.
+- **It warms up a revision once it serves.** The first round an Application serves a new
+  revision, the gate requests every member's paths once more through each public hostname its
+  Canary hands it (`hostnames`: the hosts of its `anonymous` and `authenticated` routes), so the
+  request crosses Cloudflare and Traefik to the new primary and warms the caches nearest the
+  cluster. Flagger asks nothing after promotion, which is why this loop does it
+  (JorisJonkers-dev/delivery#12).
+  - Each request is `https` on port 443, through no proxy, with no redirect followed. The
+    hostname is resolved as an absolute name, IPv4 only, since the derived internet egress admits
+    no IPv6, and the gate connects only to an address that is public. It decides on the address,
+    not the name: loopback, private, link-local, the tailnet's `100.64.0.0/10` and the reserved
+    blocks are refused.
+  - A `5xx`, or no answer within 10 seconds, stops the warmup. The record keeps what it met in
+    `warmup` (`revision`, and `failed` with the first failing request). A `401`, a `404` or a
+    redirect passes. A revision is warmed once and never again, and nothing is rolled back: the
+    Reporter fails the release's Rollout on it.
+  - An Application no public host reaches is recorded as warmed without a request.
 - **It starts a migration only while its proof holds.** The up Job, `<identity>-<tag>`, is
   unsuspended when the record's serving revision is the inputs' `testedAgainst` and no primary's
   digest has moved since. A release proven against nothing starts only where nothing is recorded

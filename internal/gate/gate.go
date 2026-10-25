@@ -98,6 +98,9 @@ type Canary struct {
 	// every Route to the member, and the path its readiness is asked on.
 	Paths     []string
 	Readiness string
+	// Hostnames are the public hosts the Canary's webhooks hand the gate to warm through, once
+	// the Application serves the revision.
+	Hostnames []string
 	// Transitioned is when Flagger last moved the member to another phase.
 	Transitioned time.Time
 }
@@ -165,6 +168,7 @@ type SyncObject struct {
 type Gate struct {
 	cluster Cluster
 	traffic Traffic
+	public  Traffic
 
 	mu sync.Mutex
 	// askedAt is the revision each member last asked a question at, by namespace and Process.
@@ -182,9 +186,12 @@ type Option func(*Gate)
 // WithTraffic has the Gate send its own requests through traffic rather than HTTPTraffic.
 func WithTraffic(traffic Traffic) Option { return func(g *Gate) { g.traffic = traffic } }
 
+// WithPublicTraffic has the Gate warm up through public rather than PublicTraffic.
+func WithPublicTraffic(public Traffic) Option { return func(g *Gate) { g.public = public } }
+
 // New returns a Gate reading cluster.
 func New(cluster Cluster, options ...Option) *Gate {
-	g := &Gate{cluster: cluster, traffic: HTTPTraffic(), askedAt: map[string]string{}, served: served{now: time.Now}}
+	g := &Gate{cluster: cluster, traffic: HTTPTraffic(), public: PublicTraffic(), askedAt: map[string]string{}, served: served{now: time.Now}}
 	for _, option := range options {
 		option(g)
 	}

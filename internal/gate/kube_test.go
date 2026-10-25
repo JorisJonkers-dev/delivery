@@ -162,12 +162,19 @@ func TestACanaryIsReadWithWhatItsWebhooksCarryAndWhatFlaggerRecorded(t *testing.
 	api := canary("auth-api", handing(rendered(revision), "/api /api/v1/users/register", "/api/actuator/health/readiness"),
 		map[string]any{"phase": "WaitingPromotion", "lastAppliedSpec": "a2", "lastPromotedSpec": "a1", "iterations": int64(4)})
 	api.Object["spec"].(map[string]any)["service"] = map[string]any{"port": int64(8080)}
+	for _, w := range api.Object["spec"].(map[string]any)["analysis"].(map[string]any)["webhooks"].([]any) {
+		w.(map[string]any)["metadata"].(map[string]any)["hostnames"] = "auth.jorisjonkers.dev id.jorisjonkers.dev"
+	}
 	k := kube(nil,
 		api,
 		canary("auth-ui", rendered(revision), nil),
 		canary("two-path-sets", []any{
 			handing([]any{webhook("may-start", "auth", revision)}, "/api", "")[0],
 			handing([]any{webhook("checks", "auth", revision)}, "/", "")[0],
+		}, nil),
+		canary("two-host-sets", []any{
+			map[string]any{"name": "may-start", "metadata": map[string]any{"application": "auth", "revision": revision, "hostnames": "a.example"}},
+			map[string]any{"name": "checks", "metadata": map[string]any{"application": "auth", "revision": revision}},
 		}, nil),
 		canary("two-readiness-paths", []any{
 			handing([]any{webhook("may-start", "auth", revision)}, "/", "/ready")[0],
@@ -186,6 +193,7 @@ func TestACanaryIsReadWithWhatItsWebhooksCarryAndWhatFlaggerRecorded(t *testing.
 	want := gate.Canary{
 		Application: "auth", Revision: revision, Phase: "WaitingPromotion", Applied: "a2", Promoted: "a1", Iterations: 4,
 		Port: 8080, Paths: []string{"/api", "/api/v1/users/register"}, Readiness: "/api/actuator/health/readiness",
+		Hostnames: []string{"auth.jorisjonkers.dev", "id.jorisjonkers.dev"},
 	}
 	if got, err := k.Canary(t.Context(), ns, "auth-api"); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("canary = %+v, %v", got, err)
@@ -193,7 +201,7 @@ func TestACanaryIsReadWithWhatItsWebhooksCarryAndWhatFlaggerRecorded(t *testing.
 	if got, err := k.Canary(t.Context(), ns, "auth-ui"); err != nil || !reflect.DeepEqual(got, gate.Canary{Application: "auth", Revision: revision}) {
 		t.Fatalf("a Canary Flagger has not touched = %+v, %v", got, err)
 	}
-	for _, name := range []string{"two-path-sets", "two-readiness-paths", "two-revisions", "two-applications", "revision-on-one", "no-revision", "no-application", "not-webhooks", "no-webhooks", "absent"} {
+	for _, name := range []string{"two-path-sets", "two-host-sets", "two-readiness-paths", "two-revisions", "two-applications", "revision-on-one", "no-revision", "no-application", "not-webhooks", "no-webhooks", "absent"} {
 		if got, err := k.Canary(t.Context(), ns, name); err == nil {
 			t.Fatalf("%s: read as %+v, want an error", name, got)
 		}
