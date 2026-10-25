@@ -32,6 +32,9 @@ type Release struct {
 	Serving string     `json:"serving,omitempty"`
 	Pinned  string     `json:"pinned,omitempty"`
 	Since   *time.Time `json:"since,omitempty"`
+	// Warmup is what the warmup of the serving revision met, once the gate has warmed it: the
+	// Reporter fails the Rollout on it.
+	Warmup *Warmup `json:"warmup,omitempty"`
 	// Unreadable says why the gate could not read the Application's inputs or record. The
 	// fields that depend on what it could not read are then empty.
 	Unreadable string `json:"unreadable,omitempty"`
@@ -122,7 +125,7 @@ func (g *Gate) release(ctx context.Context, a Gated) (Release, error) {
 	case err != nil:
 		return Release{}, fmt.Errorf("gate: read the release record of %s/%s: %w", a.Namespace, a.Application, err)
 	}
-	release.Serving, release.Pinned = record.Serving, record.Pinned
+	release.Serving, release.Pinned, release.Warmup = record.Serving, record.Pinned, record.Warmup
 	if !record.Since.IsZero() {
 		since := record.Since.UTC()
 		release.Since = &since
