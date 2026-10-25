@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/JorisJonkers-dev/delivery/internal/gate"
 )
 
 // Rollout is a release as its unit's own annotations name it.
@@ -42,12 +44,21 @@ type Unit struct {
 	Attempted string
 	Ready     Condition
 	Members   []Member
+	// Warmups is what the Release Gate's warmup met, for every gated Application it holds a
+	// record of, by `<namespace>/<application>`. Nil where the Reporter reads no gate: a release
+	// is then through once every member is.
+	Warmups map[string]gate.Warmup
 }
 
 // Member is one blue-green Process of the unit, as its Canary records it.
 type Member struct {
-	Process string
-	Phase   string
+	// Namespace, Application and Revision are the Canary's own and what its webhooks carry: the
+	// Application the member belongs to, and the revision it was rendered at.
+	Namespace   string
+	Application string
+	Revision    string
+	Process     string
+	Phase       string
 	// Iteration is the analysis iteration Flagger has reached, of Iterations.
 	Iteration  int
 	Iterations int
@@ -124,9 +135,40 @@ func StageOf(u Unit, since time.Time) (Stage, bool) {
 		}
 	}
 	if len(waiting) == 0 {
-		return Stage{State: StateSuccess, Description: release + " promoted"}, true
+		return warmedUp(u, release), true
 	}
 	return Stage{State: StateInProgress, Description: limit("applied by Flux; " + strings.Join(waiting, ", "))}, true
+}
+
+// warmedUp is the stage of a release every member of which is through. Where the Reporter reads
+// the Release Gate, the release is promoted once the gate has warmed each of its Applications up
+// at the revision it serves, and failed where a warmup met a 5xx
+// (deploy-kit spec/v1/55-delivery.md#the-release-gate): the gate warms a revision once, and rolls
+// nothing back.
+func warmedUp(u Unit, release string) Stage {
+	if u.Warmups == nil {
+		return Stage{State: StateSuccess, Description: release + " promoted"}
+	}
+	var warming []string
+	seen := map[string]bool{}
+	for _, m := range u.Members {
+		key := m.Namespace + "/" + m.Application
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		w, held := u.Warmups[key]
+		switch {
+		case !held || w.Revision != m.Revision:
+			warming = append(warming, m.Application)
+		case w.Failed != "":
+			return failure(fmt.Sprintf("%s promoted, but its warmup failed: %s", m.Application, w.Failed))
+		}
+	}
+	if len(warming) > 0 {
+		return Stage{State: StateInProgress, Description: limit("promoted; the Release Gate is warming up " + strings.Join(warming, ", "))}
+	}
+	return Stage{State: StateSuccess, Description: release + " promoted and warmed up"}
 }
 
 // memberAt says where one member stands in this release: a few words for its stage, whether it

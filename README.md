@@ -348,7 +348,9 @@ is seen.
 |---|---|
 | `in_progress`: applied by Flux; then each member that is not through, `checks n/m`, `waits for the other members`, `promoting` or `waits for Flagger` | the unit's last applied revision is the digest its source is pinned to, and a blue-green member has not finished |
 | `success`: `<project> <version> applied by Flux and ready` | the release is applied and the unit has no blue-green member |
-| `success`: `<project> <version> promoted` | every member's Canary is settled and its primary serves what its Deployment holds: promoted in this release, or unchanged by it, the same test the Release Gate's barrier makes |
+| `in_progress`: `promoted; the Release Gate is warming up <application>, …` | every member is through, and the Release Gate has not yet recorded a warmup of each member's Application at the revision its Canary carries |
+| `success`: `<project> <version> promoted and warmed up` | every member's Canary is settled and its primary serves what its Deployment holds (promoted in this release, or unchanged by it, the same test the Release Gate's barrier makes), and the gate warmed each of their Applications up at that revision without a `5xx` |
+| `failure`: `<application> promoted, but its warmup failed: <request> answered <status>` | the gate's warmup of the revision met a `5xx` or no answer. The gate warms a revision once and rolls nothing back, so this stays the Rollout's last word |
 | `failure`: `<member> rolled back: <Flagger's message>` | a member's Canary failed after the Deployment was created |
 | `failure`: `Flux could not apply <project> <version>: <reason>: <message>` | the unit is not Ready on this release for any reason but waiting on another unit. Flux retries, so a `success` may follow |
 
@@ -366,6 +368,7 @@ first one, and names the Rollout's URL as the environment URL where it has one.
 | `FLUX_NAMESPACE` | where the units are; `flux-system` when it is not set |
 | `INTERVAL` | how often to look, a Go duration; thirty seconds when it is not set |
 | `ADDR` | where it serves `/flux` and its probes; `:8080` when it is not set |
+| `GATE_URL` | the Release Gate, whose `GET /releases` says what each warmup met; `http://release-gate.delivery-system.svc.cluster.local:8080` when it is not set |
 
 `GET /fresh` answers 200 while a pass succeeded within twice the interval, and is the
 Reporter's liveness probe, as it is the Collector's.
@@ -373,7 +376,9 @@ Reporter's liveness probe, as it is the Collector's.
 The Reporter is an Application of `deploy/delivery.project.yml`, beside the Release Gate, which
 the Platform document's `delivery.reporter` requires. Its `api` block declares its four reads:
 Kustomizations listed, each one's OCIRepository, the Canaries the unit's inventory names, and a
-settled member's Deployment and primary. deploy-kit renders that into its ClusterRole once the
+settled member's Deployment and primary. It reads the gate's `GET /releases` once a pass, over an
+edge to the gate's `http` surface, the way the estate dashboard does; a gate that does not answer
+leaves every promoted release in progress and fails none. deploy-kit renders that into its ClusterRole once the
 Platform document admits it; its GitHub App arrives as variables, from a grant on
 `secret/data/delivery-system/reporter`.
 

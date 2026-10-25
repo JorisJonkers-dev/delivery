@@ -122,7 +122,14 @@ func (k Kube) member(ctx context.Context, namespace, process string) (Member, er
 	if err != nil {
 		return Member{}, err
 	}
-	m := Member{Process: process}
+	m := Member{Namespace: namespace, Process: process}
+	// Every webhook of a Canary carries the same Application and revision.
+	webhooks, _, _ := unstructured.NestedSlice(object.Object, "spec", "analysis", "webhooks")
+	if len(webhooks) > 0 {
+		fields, _ := webhooks[0].(map[string]any)
+		m.Application, _, _ = unstructured.NestedString(fields, "metadata", "application")
+		m.Revision, _, _ = unstructured.NestedString(fields, "metadata", "revision")
+	}
 	m.Phase, _, _ = unstructured.NestedString(object.Object, "status", "phase")
 	m.Applied, _, _ = unstructured.NestedString(object.Object, "status", "lastAppliedSpec")
 	m.Promoted, _, _ = unstructured.NestedString(object.Object, "status", "lastPromotedSpec")

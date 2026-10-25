@@ -189,6 +189,10 @@ applications:
         runtime: none
         provides:
           http: 8080 # Flux's events, at /flux, and its probes
+        # Each release's warmup is the Release Gate's to record, so a Rollout ends on what the
+        # gate's GET /releases says (deploy-kit spec/v1/55-delivery.md#the-release-gate).
+        dependsOn:
+          - { application: release-gate, surface: http }
         placement:
           memory: 64Mi
           cpu: 10m
