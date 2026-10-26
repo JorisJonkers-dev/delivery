@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -109,7 +110,8 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 	switch name {
 	case "files":
 		return backup.Generation{Method: "files", Extension: ".tar.gz"}, func(w io.Writer) error {
-			return backup.Archive(at.data, w)
+			// Beside the generations, on the claim the method writes: the volume is read-only.
+			return backup.Archive(ctx, at.data, filepath.Join(at.backup, ".sqlite-staging"), w)
 		}, nil
 	case "postgres":
 		if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "PGUSER", "PGPASSWORD"); err != nil {
