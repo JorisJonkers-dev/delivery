@@ -180,9 +180,9 @@ func asksAs(process string) gate.Question {
 
 // midRelease is a gate over c that the UI has already asked a question of at this revision, as
 // Flagger does on every tick of its analysis.
-func midRelease(t *testing.T, c *cluster) *gate.Gate {
+func midRelease(t *testing.T, c *cluster, options ...gate.Option) *gate.Gate {
 	t.Helper()
-	g := gate.New(c)
+	g := gate.New(c, options...)
 	if _, err := g.Checks(t.Context(), asksAs("auth-ui")); err != nil {
 		t.Fatal(err)
 	}
