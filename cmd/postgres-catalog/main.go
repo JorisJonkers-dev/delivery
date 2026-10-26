@@ -36,6 +36,11 @@ const (
 	defaultTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	// timeout bounds each call to Vault and each connection to Postgres.
 	timeout = 30 * time.Second
+	// A policy that admits a new pod refuses it until the policy controller has its address,
+	// seconds after the pod starts (JorisJonkers-dev/delivery#87). A refused connection is tried
+	// again this often, this many times: thirty seconds in all.
+	refusedEvery    = time.Second
+	refusedAttempts = 30
 )
 
 func main() {
@@ -127,6 +132,23 @@ func connector(c catalog.Catalog, user, password string) catalog.Connect {
 		for _, fallback := range config.Fallbacks {
 			fallback.Host, fallback.Port = c.Host, port
 		}
-		return pgx.ConnectConfig(ctx, config)
+		return untilAdmitted(ctx, func(ctx context.Context) (*pgx.Conn, error) { return pgx.ConnectConfig(ctx, config) }, time.After)
+	}
+}
+
+// untilAdmitted connects, and connects again while the connection is refused, up to
+// refusedAttempts times, waiting refusedEvery between tries. Any other error is returned at once:
+// a wrong password or an absent database is not the network's to fix.
+func untilAdmitted(ctx context.Context, connect func(context.Context) (*pgx.Conn, error), after func(time.Duration) <-chan time.Time) (*pgx.Conn, error) {
+	for attempt := 1; ; attempt++ {
+		conn, err := connect(ctx)
+		if err == nil || !errors.Is(err, syscall.ECONNREFUSED) || attempt == refusedAttempts {
+			return conn, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-after(refusedEvery):
+		}
 	}
 }
