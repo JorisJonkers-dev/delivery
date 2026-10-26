@@ -27,10 +27,6 @@ import (
 	"time"
 )
 
-// ErrOffCluster reports a plan that asks for an off-cluster copy, which no method makes yet: the
-// local generation is written, and the run still fails, so the missing copy is never silent.
-var ErrOffCluster = errors.New("an off-cluster copy is not made yet")
-
 // RollbackKept is how long a Rollback's copy is kept: deploy-kit's chapter 55 fixes it.
 const RollbackKept = 7 * 24 * time.Hour
 
@@ -81,7 +77,8 @@ func (g Generation) name(at time.Time) string {
 	return rollbackPrefix + g.Rollback + "-" + own
 }
 
-func (g Generation) matches(name string) bool {
+// Matches reports whether name is one of g's generations, never a Rollback's copy.
+func (g Generation) Matches(name string) bool {
 	return strings.HasPrefix(name, g.Method+"-") && strings.HasSuffix(name, g.Extension)
 }
 
@@ -118,7 +115,7 @@ func Prune(dir string, g Generation, retain int) ([]string, error) {
 	}
 	var generations []string
 	for _, entry := range entries {
-		if entry.Type().IsRegular() && g.matches(entry.Name()) {
+		if entry.Type().IsRegular() && g.Matches(entry.Name()) {
 			generations = append(generations, entry.Name())
 		}
 	}

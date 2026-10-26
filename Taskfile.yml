@@ -71,9 +71,9 @@ tasks:
     cmds:
       # The envtest cases start a real API server; setup-envtest fetches it once.
       - KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{.ENVTEST_KUBERNETES}} -p path)" go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
-      # Generated code is held by the corpus test and gen:check, and the fake GitHub is a test
-      # double: neither is what the coverage figure is about.
-      - grep -v -e '_gen\.go:' -e '/githubtest/' coverage.out > coverage.handwritten.out
+      # Generated code is held by the corpus test and gen:check, and the fake GitHub and the Garage are test
+      # doubles: none is what the coverage figure is about.
+      - grep -v -e '_gen\.go:' -e '/githubtest/' -e '/garagetest/' coverage.out > coverage.handwritten.out
       - |
         total="$(go tool cover -func=coverage.handwritten.out | awk '/^total:/ { sub("%", "", $3); print $3 }')"
         echo "coverage: ${total}% (minimum {{.COVERAGE_MIN}}%)"
