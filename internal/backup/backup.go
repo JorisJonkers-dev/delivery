@@ -166,8 +166,14 @@ func PruneRollbacks(dir string, now time.Time) ([]string, error) {
 }
 
 // Archive writes every directory, regular file and symbolic link under root as a gzipped tar,
-// named relative to root. Anything else, a socket or a device, has no backup worth taking.
-func Archive(root string, w io.Writer) error {
+// named relative to root. Anything else, a socket or a device, has no backup worth taking. A
+// SQLite database is archived as a consistent copy taken in scratch, a directory of the method's
+// own outside root, and the files SQLite keeps beside it are left out (sqlite.go).
+func Archive(ctx context.Context, root, scratch string, w io.Writer) error {
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		return fmt.Errorf("make the scratch directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(scratch) }()
 	compressed := gzip.NewWriter(w)
 	archive := tar.NewWriter(compressed)
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -178,7 +184,11 @@ func Archive(root string, w io.Writer) error {
 		if err != nil || name == "." {
 			return err
 		}
-		return add(archive, path, filepath.ToSlash(name), entry)
+		content, skip, err := contentOf(ctx, path, scratch, entry)
+		if err != nil || skip {
+			return err
+		}
+		return add(archive, path, content, filepath.ToSlash(name), entry)
 	})
 	if err != nil {
 		return fmt.Errorf("archive %s: %w", root, err)
@@ -192,7 +202,33 @@ func Archive(root string, w io.Writer) error {
 	return nil
 }
 
-func add(archive *tar.Writer, path, name string, entry fs.DirEntry) error {
+// contentOf says where a file's archived content comes from: the file itself, or, for a SQLite
+// database, its consistent copy. skip is set for a file SQLite keeps beside a database, which
+// the copy has folded in.
+func contentOf(ctx context.Context, path, scratch string, entry fs.DirEntry) (content string, skip bool, err error) {
+	if !entry.Type().IsRegular() {
+		return path, false, nil
+	}
+	if stem, found := companionOf(path); found {
+		database, err := isSQLite(stem)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", false, err
+		}
+		if database {
+			return "", true, nil
+		}
+	}
+	database, err := isSQLite(path)
+	if err != nil || !database {
+		return path, false, err
+	}
+	copied, err := snapshot(ctx, path, scratch)
+	return copied, false, err
+}
+
+// add writes one entry: its header from the walked file, its content from content, which is
+// the file itself or a consistent copy of it.
+func add(archive *tar.Writer, path, content, name string, entry fs.DirEntry) error {
 	info, err := entry.Info()
 	if err != nil {
 		return err
@@ -212,13 +248,20 @@ func add(archive *tar.Writer, path, name string, entry fs.DirEntry) error {
 		return err
 	}
 	header.Name = name
+	if info.Mode().IsRegular() && content != path {
+		copied, err := os.Stat(content)
+		if err != nil {
+			return err
+		}
+		header.Size = copied.Size()
+	}
 	if err := archive.WriteHeader(header); err != nil {
 		return err
 	}
 	if !info.Mode().IsRegular() {
 		return nil
 	}
-	file, err := os.Open(path) //nolint:gosec // G304: walking the volume is the point
+	file, err := os.Open(content) //nolint:gosec // G304: walking the volume is the point
 	if err != nil {
 		return err
 	}

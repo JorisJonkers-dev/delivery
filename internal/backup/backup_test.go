@@ -195,7 +195,7 @@ func TestArchiveHoldsTheTreeRelativeToItsRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := backup.Archive(root, &out); err != nil {
+	if err := backup.Archive(t.Context(), root, t.TempDir(), &out); err != nil {
 		t.Fatal(err)
 	}
 	compressed, err := gzip.NewReader(&out)
@@ -229,7 +229,7 @@ func TestArchiveHoldsTheTreeRelativeToItsRoot(t *testing.T) {
 			t.Errorf("%s = %q, want %q", name, held[name], entry)
 		}
 	}
-	if err := backup.Archive(filepath.Join(root, "absent"), io.Discard); err == nil {
+	if err := backup.Archive(t.Context(), filepath.Join(root, "absent"), t.TempDir(), io.Discard); err == nil {
 		t.Fatal("archived a root that does not exist")
 	}
 }
