@@ -3,7 +3,6 @@ package main
 import (
 	"compress/gzip"
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,7 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JorisJonkers-dev/delivery/internal/backup"
+	"filippo.io/age"
+
+	"github.com/JorisJonkers-dev/delivery/internal/offcluster/garagetest"
 )
 
 func claim(t *testing.T) paths {
@@ -105,11 +106,11 @@ func TestARollbacksRunRefusesARequestDeployKitWouldNot(t *testing.T) {
 	}
 }
 
-func TestAnOffClusterPlanKeepsTheLocalGenerationAndFails(t *testing.T) {
+func TestAnOffClusterPlanItCannotCarryOutKeepsTheLocalGenerationAndFails(t *testing.T) {
 	at := claim(t)
 	written, _, err := run(context.Background(), []string{"files"},
 		env(map[string]string{"BACKUP_RETAIN": "1", "BACKUP_OFF_CLUSTER": "s3://backups/estate"}), at, time.Now())
-	if !errors.Is(err, backup.ErrOffCluster) || !strings.Contains(err.Error(), "s3://backups/estate") {
+	if err == nil || !strings.Contains(err.Error(), "kept "+written+" locally") || !strings.Contains(err.Error(), "BACKUP_OFF_CLUSTER_RECIPIENT") {
 		t.Fatalf("error = %v", err)
 	}
 	if _, statErr := os.Stat(written); statErr != nil {
@@ -118,6 +119,48 @@ func TestAnOffClusterPlanKeepsTheLocalGenerationAndFails(t *testing.T) {
 	if code := start(context.Background(), slog.New(slog.DiscardHandler), []string{"files"},
 		env(map[string]string{"BACKUP_RETAIN": "1", "BACKUP_OFF_CLUSTER": "s3://backups/estate"}), at, time.Now); code != 1 {
 		t.Fatalf("exited %d", code)
+	}
+}
+
+func TestAScheduledRunCopiesOffClusterAndKeepsTheNewestRetainThere(t *testing.T) {
+	endpoint := garagetest.Start(t)
+	recipient, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := claim(t)
+	values := map[string]string{
+		"BACKUP_RETAIN":                "1",
+		"BACKUP_OFF_CLUSTER":           "s3://" + garagetest.Bucket,
+		"BACKUP_OFF_CLUSTER_PATH":      "jellyfin/jellyfin/config",
+		"BACKUP_OFF_CLUSTER_RECIPIENT": recipient.Recipient().String(),
+		"AWS_ENDPOINT_URL":             endpoint,
+		"AWS_REGION":                   garagetest.Region,
+		"AWS_ACCESS_KEY_ID":            garagetest.AccessKey,
+		"AWS_SECRET_ACCESS_KEY":        garagetest.SecretKey,
+	}
+	day := time.Date(2026, 10, 1, 2, 45, 0, 0, time.UTC)
+	if _, _, err := run(t.Context(), []string{"files"}, env(values), at, day); err != nil {
+		t.Fatal(err)
+	}
+
+	_, removed, err := run(t.Context(), []string{"files"}, env(values), at, day.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The first day's copy goes, here and off the cluster, and the staging directory with it.
+	if got := strings.Join(removed, " "); got != "files-20261001T024500Z.tar.gz jellyfin/jellyfin/config/files-20261001T024500Z.tar.gz.age" {
+		t.Fatalf("removed %s", got)
+	}
+	if got := strings.Join(held(t, at.backup), " "); got != "files-20261002T024500Z.tar.gz" {
+		t.Fatalf("the claim holds %s", got)
+	}
+	// A Rollback's copy stays on the claim alone, whatever the plan says of off-cluster.
+	values["BACKUP_ROLLBACK"] = "abc123"
+	values["AWS_ENDPOINT_URL"] = "http://127.0.0.1:1"
+	if _, _, err := run(t.Context(), []string{"files"}, env(values), at, day.AddDate(0, 0, 2)); err != nil {
+		t.Fatalf("a Rollback's run reached off-cluster: %v", err)
 	}
 }
 

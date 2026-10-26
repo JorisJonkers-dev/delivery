@@ -12,7 +12,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | Reporter: keeps every Rollout's GitHub Deployment current, stage by stage | built and tested; not deployed yet, see [The Reporter](#the-reporter). Writes no warmup stage until the Release Gate warms up |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
 | Catalog method: `postgres-catalog`, the image the Platform document's `postgres` engine names to apply its database catalog | built and tested against a real Postgres and a dev Vault, see [The catalog method](#the-catalog-method); not deployed yet |
-| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. `file-backup` copies a SQLite database consistently: the database and its write-ahead log are copied together into `.sqlite-staging` on the backup claim, the log is folded in, and the copy must pass SQLite's integrity check, taken up to three times before the run fails; the archive holds the one-file copy and none of its `-wal`, `-shm` or `-journal` files ([deploy-kit#470](https://github.com/JorisJonkers-dev/deploy-kit/issues/470)). No off-cluster copy yet |
+| Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. `file-backup` copies a SQLite database consistently: the database and its write-ahead log are copied together into `.sqlite-staging` on the backup claim, the log is folded in, and the copy must pass SQLite's integrity check, taken up to three times before the run fails; the archive holds the one-file copy and none of its `-wal`, `-shm` or `-journal` files ([deploy-kit#470](https://github.com/JorisJonkers-dev/deploy-kit/issues/470)). Handed `BACKUP_OFF_CLUSTER`, a scheduled run also copies its generation off the cluster, as [the off-cluster copy](#the-off-cluster-copy) says |
 
 ## What is in it
 
@@ -31,6 +31,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | `cmd/postgres-catalog/`, `internal/catalog/` | The catalog method's binary, and what it applies: databases, roles, adoption and the Secret Store's database roles |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
 | `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN` and a Rollback's copies by age, and what each method writes: a gzipped tar of `/data` with each SQLite database copied consistently, a gzipped `pg_dumpall`, the broker's definitions |
+| `internal/offcluster/` | The off-cluster copy: encrypted to an age recipient, written to an S3-compatible bucket with a Signature Version 4 signer of its own, read back, and pruned to `BACKUP_RETAIN`; `garagetest/` starts the one-node Garage its tests and the command's write to |
 | `internal/vaultpolicy/` | Reading the rendered documents, the six Vault calls, and the run that writes what Vault does not hold as rendered |
 | `internal/deploykit/` | Go types generated from deploy-kit's published JSON Schemas, one package per schema, and the test that holds them to deploy-kit's corpus |
 | `third_party/deploy-kit/` | The schemas, their accept/refuse corpus and the spec files the corpus reads, vendored at `DEPLOY_KIT_REF`; mirrors deploy-kit's `spec/v1/` |
@@ -235,6 +236,37 @@ place since is not the one started. A record is named for the namespace as well 
 so inputs under one Application id elsewhere can neither claim it first nor write over it: they
 are tended as their own namespace's, and silence nothing of this one. The `api` block of its Process in `deploy/delivery.project.yml` declares the grant, and
 deploy-kit renders the ClusterRole, its binding and the token from that.
+
+## The off-cluster copy
+
+An `irreplaceable` volume's class names an off-cluster destination, and its backup copies each
+scheduled generation there after writing it to the backup claim
+([deploy-kit#470](https://github.com/JorisJonkers-dev/deploy-kit/issues/470)). A Rollback's
+copy stays on the claim.
+
+| variable | from | what it is |
+|---|---|---|
+| `BACKUP_OFF_CLUSTER` | the render, the class's `offCluster.destination` | `s3://bucket[/prefix]` |
+| `BACKUP_OFF_CLUSTER_PATH` | the render | where under the destination this volume's copies go |
+| `BACKUP_OFF_CLUSTER_RECIPIENT` | the render, from the Platform document | the age public key (`age1…`) each copy is encrypted to |
+| `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | the credential the operator writes at the destination's Secret Store path | the provider's S3 endpoint and the keys that write to the bucket; the region defaults to `us-east-1` |
+
+1. The generation is encrypted on the pod to the recipient, into `.off-cluster-staging` on the
+   backup claim, so the provider never holds a readable copy. Only the private key, kept off the
+   cluster, opens it.
+2. It is written in one PUT, path-style, to `<prefix>/<path>/<generation>.age`, signed over its
+   SHA-256, which the provider checks. Over 5 GiB is refused: multipart uploads are not built.
+3. It is read back with a HEAD: a size or SHA-256 that differs from what was sent fails the run.
+4. The copies there are pruned to the newest `BACKUP_RETAIN` of the method, the same count as
+   the claim's.
+
+A run that cannot finish any step keeps its local generation and fails, so a missing copy is
+never silent. A restore reads the object with any S3 client and decrypts it with the private
+key, then unpacks it as a local generation:
+
+```bash
+age --decrypt --identity backup-key.txt files-20261026T031500Z.tar.gz.age | tar -xz
+```
 
 ## The catalog method
 

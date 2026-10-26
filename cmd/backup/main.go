@@ -15,7 +15,10 @@
 // credential it logs in with as variables (deploy-kit spec/v1/14-platform-intent.md#engines): the
 // operator writes PGUSER and PGPASSWORD, or RABBITMQ_USERNAME and RABBITMQ_PASSWORD, at the
 // Process's derived path. A method refuses to run without them rather than guess.
-// BACKUP_OFF_CLUSTER is not copied to yet: the local generation is written and the run fails.
+//
+// Handed BACKUP_OFF_CLUSTER, a scheduled run also copies its generation off the cluster, encrypted
+// to BACKUP_OFF_CLUSTER_RECIPIENT, reads it back, and keeps the newest BACKUP_RETAIN there too
+// (internal/offcluster). A run that cannot keeps its local generation and fails.
 package main
 
 import (
@@ -29,10 +32,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/JorisJonkers-dev/delivery/internal/backup"
+	"github.com/JorisJonkers-dev/delivery/internal/offcluster"
 )
 
 // version is set at build time with -ldflags "-X main.version=…".
@@ -99,10 +104,33 @@ func run(ctx context.Context, args []string, getenv func(string) string, at path
 		return written, removed, err
 	}
 	removed = append(removed, expired...)
-	if settings.OffCluster != "" {
-		return written, removed, fmt.Errorf("%w: kept %s locally, not copied to %s", backup.ErrOffCluster, written, settings.OffCluster)
+	// A Rollback's copy is a local one, kept for days; the class's copies are what go off-cluster.
+	if settings.OffCluster == "" || settings.Rollback != "" {
+		return written, removed, nil
 	}
-	return written, removed, nil
+	pruned, err := offCluster(ctx, getenv, at, generation, written, settings.Retain)
+	if err != nil {
+		return written, removed, fmt.Errorf("kept %s locally: %w", written, err)
+	}
+	return written, append(removed, pruned...), nil
+}
+
+// offCluster copies the generation written at local off the cluster, and prunes the copies there
+// to retain, returning the keys it deleted.
+func offCluster(ctx context.Context, getenv func(string) string, at paths, generation backup.Generation, local string, retain int) ([]string, error) {
+	settings, err := offcluster.ReadSettings(getenv)
+	if err != nil {
+		return nil, err
+	}
+	// Each request is signed at the time it is sent: a provider refuses one signed long before.
+	store := offcluster.Store{Settings: settings, HTTP: &http.Client{Timeout: timeout}, Now: time.Now}
+	if _, err := store.Copy(ctx, local, filepath.Join(at.backup, ".off-cluster-staging")); err != nil {
+		return nil, err
+	}
+	return store.Prune(ctx, func(name string) bool {
+		own, sealed := strings.CutSuffix(name, offcluster.Extension)
+		return sealed && generation.Matches(own)
+	}, retain)
 }
 
 // method is what one method writes, and under which name.
