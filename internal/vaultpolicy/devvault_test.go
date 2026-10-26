@@ -188,3 +188,18 @@ func TestAgainstADevVaultGeneratedKeysAreWrittenOnceAndNeverChanged(t *testing.T
 		t.Fatalf("second run = %v, %v", again, err)
 	}
 }
+
+func TestAgainstADevVaultCreateKVWritesADocumentOnlyWhereNoneIs(t *testing.T) {
+	vault := devVault(t)
+	path := "secret/data/knowledge/garage/s3"
+	if err := vault.CreateKV(t.Context(), path, map[string]string{"access-key-id": "GK1", "secret-access-key": "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.CreateKV(t.Context(), path, map[string]string{"access-key-id": "GK2", "secret-access-key": "second"}); err == nil {
+		t.Fatal("a second document replaced the first")
+	}
+	held, err := vault.ReadKV(t.Context(), path)
+	if err != nil || string(held["access-key-id"]) != `"GK1"` || string(held["secret-access-key"]) != `"first"` {
+		t.Fatalf("Vault holds %v, %v", held, err)
+	}
+}

@@ -158,6 +158,20 @@ func (v Vault) ReadKV(ctx context.Context, path string) (map[string]json.RawMess
 	return data, err
 }
 
+// CreateKV writes a KV version 2 document only where Vault holds none at path, so a document
+// another writer made first is never replaced.
+func (v Vault) CreateKV(ctx context.Context, path string, data map[string]string) error {
+	encoded := make(map[string]json.RawMessage, len(data))
+	for key, value := range data {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		encoded[key] = raw
+	}
+	return v.putKV(ctx, path, encoded, 0)
+}
+
 // Write writes one document at path.
 func (v Vault) Write(ctx context.Context, path string, body any) error {
 	_, err := v.call(ctx, http.MethodPost, path, body, nil)

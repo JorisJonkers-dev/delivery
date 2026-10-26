@@ -12,6 +12,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | Reporter: keeps every Rollout's GitHub Deployment current, stage by stage | built and tested; not deployed yet, see [The Reporter](#the-reporter). Writes no warmup stage until the Release Gate warms up |
 | Vault policy job: applies the rendered policies and roles | built and tested against a dev Vault, see [The Vault policy job](#the-vault-policy-job); not deployed yet |
 | Catalog method: `postgres-catalog`, the image the Platform document's `postgres` engine names to apply its database catalog | built and tested against a real Postgres and a dev Vault, see [The catalog method](#the-catalog-method); not deployed yet |
+| Catalog method: `garage-catalog`, the image the Platform document's `s3` engine names to apply its bucket catalog | built and tested against a real Garage, see [The bucket catalog method](#the-bucket-catalog-method); not deployed yet |
 | Backup methods: `file-backup`, `postgres-backup`, `rabbitmq-backup`, the images the Platform document's engines name | built and tested; each writes one generation into the backup claim and keeps the newest `BACKUP_RETAIN`. The two network methods dump the peer the render hands them as `BACKUP_HOST` and `BACKUP_PORT`, logging in with the credential's keys (`PGUSER` and `PGPASSWORD`, `RABBITMQ_USERNAME` and `RABBITMQ_PASSWORD`) ([deploy-kit#284](https://github.com/JorisJonkers-dev/deploy-kit/issues/284)). A Rollback's one-shot run, handed `BACKUP_ROLLBACK`, writes `rollback-<request>-<generation>`, which `BACKUP_RETAIN` never counts and every run deletes after 7 days. `file-backup` copies a SQLite database consistently: the database and its write-ahead log are copied together into `.sqlite-staging` on the backup claim, the log is folded in, and the copy must pass SQLite's integrity check, taken up to three times before the run fails; the archive holds the one-file copy and none of its `-wal`, `-shm` or `-journal` files ([deploy-kit#470](https://github.com/JorisJonkers-dev/deploy-kit/issues/470)). Handed `BACKUP_OFF_CLUSTER`, a scheduled run also copies its generation off the cluster, as [the off-cluster copy](#the-off-cluster-copy) says |
 
 ## What is in it
@@ -29,6 +30,7 @@ Go, and the `delivery` project that deploys them. Generated from
 | `internal/reporter/` | The stage each Rollout is at, read from its unit, its source and its Canaries; the writes to its Deployment; and the envtest case that runs it against a cluster |
 | `cmd/vault-policy/` | The Vault policy job's binary: runs once and exits |
 | `cmd/postgres-catalog/`, `internal/catalog/` | The catalog method's binary, and what it applies: databases, roles, adoption and the Secret Store's database roles |
+| `cmd/garage-catalog/`, `internal/bucketcatalog/` | The bucket catalog method's binary, and what it applies through Garage's admin API: each project's key, its buckets and its grants |
 | `cmd/backup/`, `backup.Dockerfile` | The backup methods' one binary, `backup files\|postgres\|rabbitmq`, and the three images built from it, one target each |
 | `internal/backup/` | Writing one generation atomically, pruning to `BACKUP_RETAIN` and a Rollback's copies by age, and what each method writes: a gzipped tar of `/data` with each SQLite database copied consistently, a gzipped `pg_dumpall`, the broker's definitions |
 | `internal/offcluster/` | The off-cluster copy: encrypted to an age recipient, written to an S3-compatible bucket with a Signature Version 4 signer of its own, read back, and pruned to `BACKUP_RETAIN`; `garagetest/` starts the one-node Garage its tests and the command's write to |
@@ -301,6 +303,24 @@ Each run, for each database the catalog names, in order:
 
 It signs in to Vault as `VAULT_ROLE`, reads the admin login at the catalog's `admin` path, and
 never drops anything. A second run changes nothing.
+
+## The bucket catalog method
+
+deploy-kit renders, for a Garage whose engine names `catalog: garage-catalog`, the same Job and
+hourly CronJob, handed a bucket catalog: the admin API's host and port, where its token is, and
+one key per consuming project with the buckets it may use
+([deploy-kit spec/v1/16-dependencies.md](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/16-dependencies.md#the-bucket-catalog)).
+It signs in to Vault as `VAULT_ROLE`, reads the admin token, and, for each key, in order:
+
+1. reads the key's document, `secret/data/<project>/<process>/s3`. Where it holds a key, the store
+   imports it if it lacks it, so a Garage rebuilt from nothing hands out the same keys again; a
+   store holding that id with another secret fails the run. Where there is no document, a key the
+   store already holds under the project's name is written down, or else one is minted, and
+   written as `access-key-id` and `secret-access-key`, only where no document is;
+2. creates each of its buckets where it is absent;
+3. grants the key read and write on each, never ownership.
+
+It never deletes a key, a bucket or a grant. A second run changes nothing.
 
 ## The Vault policy job
 

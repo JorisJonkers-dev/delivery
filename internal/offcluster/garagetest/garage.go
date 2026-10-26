@@ -26,6 +26,8 @@ const (
 	SecretKey = "1111111111111111111111111111111111111111111111111111111111111111"
 	// Region is the region the store signs for.
 	Region = "garage"
+	// AdminToken signs in to the admin API.
+	AdminToken = "garagetest-admin" //nolint:gosec // G101: the admin token of a store the test starts and discards
 )
 
 // nodeID is a node's id among the log lines its CLI writes beside it.
@@ -42,11 +44,22 @@ rpc_secret = "00000000000000000000000000000000000000000000000000000000000000ff"
 [s3_api]
 s3_region = "garage"
 api_bind_addr = "[::]:3900"
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "` + AdminToken + `"
 `
 
 // Start starts the store and returns its S3 endpoint. It skips under -short, which runs without
 // Docker.
 func Start(t *testing.T) string {
+	t.Helper()
+	s3, _ := StartAdmin(t)
+	return s3
+}
+
+// StartAdmin starts the store and returns its S3 endpoint and its admin API's.
+func StartAdmin(t *testing.T) (s3, admin string) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("needs Docker; skipped with -short")
@@ -55,7 +68,7 @@ func Start(t *testing.T) string {
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
-			ExposedPorts: []string{"3900/tcp"},
+			ExposedPorts: []string{"3900/tcp", "3903/tcp"},
 			Files: []testcontainers.ContainerFile{{
 				Reader: strings.NewReader(config), ContainerFilePath: "/etc/garage.toml", FileMode: 0o644,
 			}},
@@ -92,9 +105,13 @@ func Start(t *testing.T) string {
 	garage("key", "import", "--yes", "-n", "test", AccessKey, SecretKey)
 	garage("bucket", "create", Bucket)
 	garage("bucket", "allow", "--read", "--write", "--owner", Bucket, "--key", "test")
-	endpoint, err := container.PortEndpoint(ctx, "3900/tcp", "http")
+	s3, err = container.PortEndpoint(ctx, "3900/tcp", "http")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return endpoint
+	admin, err = container.PortEndpoint(ctx, "3903/tcp", "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s3, admin
 }
