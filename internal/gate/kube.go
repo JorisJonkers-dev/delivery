@@ -39,6 +39,18 @@ var Canaries = schema.GroupVersionResource{Group: "flagger.app", Version: "v1bet
 type Kube struct {
 	Client  kubernetes.Interface
 	Dynamic dynamic.Interface
+	// Scraper is the metrics stack's pods, the one caller of GET /metrics; zero where nobody may
+	// scrape the gate.
+	Scraper Scraper
+}
+
+// Scraper names the pods of the Process the platform's metrics stack scrapes from: its namespace,
+// a label selector and the ServiceAccount it runs as. The metrics stack is still on the old path,
+// where no render names it, so the gate's env file does.
+type Scraper struct {
+	Namespace      string
+	Selector       string
+	ServiceAccount string
 }
 
 var _ Cluster = Kube{}
@@ -56,13 +68,27 @@ const (
 // host's network, whose address is every such pod's on its node, nor one that runs as another
 // identity than the Process's own.
 func (k Kube) Flagger(ctx context.Context) ([]string, error) {
-	list, err := k.Client.CoreV1().Pods(flaggerNamespace).List(ctx, metav1.ListOptions{LabelSelector: labelInstance + "=" + flaggerInstance})
+	return k.addresses(ctx, Scraper{Namespace: flaggerNamespace, Selector: labelInstance + "=" + flaggerInstance, ServiceAccount: flaggerInstance})
+}
+
+// Scrapers implements Cluster, by the same rules as Flagger: the metrics stack's running pods,
+// off the host's network, running as its ServiceAccount.
+func (k Kube) Scrapers(ctx context.Context) ([]string, error) {
+	if k.Scraper == (Scraper{}) {
+		return nil, nil
+	}
+	return k.addresses(ctx, k.Scraper)
+}
+
+// addresses is every address of every pod of one Process that holds its address now.
+func (k Kube) addresses(ctx context.Context, of Scraper) ([]string, error) {
+	list, err := k.Client.CoreV1().Pods(of.Namespace).List(ctx, metav1.ListOptions{LabelSelector: of.Selector})
 	if err != nil {
 		return nil, err
 	}
 	var addresses []string
 	for _, pod := range list.Items {
-		if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil || pod.Spec.HostNetwork || pod.Spec.ServiceAccountName != flaggerInstance {
+		if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil || pod.Spec.HostNetwork || pod.Spec.ServiceAccountName != of.ServiceAccount {
 			continue
 		}
 		for _, ip := range pod.Status.PodIPs {

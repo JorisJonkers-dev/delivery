@@ -18,7 +18,7 @@ Go, and the `delivery` project that deploys them. Generated from
 
 | Path | What it is |
 |------|------------|
-| `cmd/release-gate/` | The Release Gate binary: reads `ADDR` (default `:8080`) and the cluster it runs in, logs JSON with `slog`, drains on `SIGTERM` |
+| `cmd/release-gate/` | The Release Gate binary: reads `ADDR` (default `:8080`), the `METRICS_SCRAPER_*` that name who may scrape it, and the cluster it runs in, logs JSON with `slog`, drains on `SIGTERM` |
 | `internal/gate/` | The gate's three answers, the webhooks that carry them, what it does between questions (`tend.go`), and how it reads the cluster |
 | `internal/server/` | The HTTP surface: `/healthz`, `/readyz`, the service's own routes, graceful shutdown |
 | `cmd/collector/` | The ClusterState Collector binary: captures at start and on its own interval |
@@ -219,11 +219,25 @@ applied (`migration not undone`: the tag the Down would return to and the condit
 `first-release`, `new-copy-running`, `primaries-moved`, `non-transactional` or `down-failed`),
 and every Application it could not read.
 
-Not here yet: a release that outlives the gate deadline is not reported as held, because nothing
-says when that deadline starts (JorisJonkers-dev/deploy-kit#264); and there is no `/metrics` for
-alert rules to read. A scrape endpoint names namespaces, Applications and revisions, so it waits
-until JorisJonkers-dev/delivery#22 decides who may read it and how the gate admits them, the way
-the webhooks admit Flagger alone.
+The same round is served at `GET /metrics`, in Prometheus's text format, for the alert rules
+(JorisJonkers-dev/delivery#22):
+
+| series | one per | what an alert reads from it |
+|---|---|---|
+| `release_gate_tended_timestamp_seconds` | the gate | when the last round finished; 0 before the first |
+| `release_gate_held_since_timestamp_seconds` | held release, by `namespace`, `application`, `reason`, `serving`, `pinned` | when the gate first saw the pinned revision applied and not serving |
+| `release_gate_held_deadline_seconds` | held release, the same labels | the Application's gate deadline: a release held past it is one nothing moves on its own |
+| `release_gate_undo_refused` | migration left applied, by `tag` and `condition` | an urgent alert |
+| `release_gate_unanswerable` | Application the gate could not read | the gate answers no for it |
+
+It names namespaces, Applications and revisions, so it answers the metrics stack's pods alone, by
+the same rule as the webhooks answer Flagger's: a running pod off the host's network, of the
+namespace, selector and ServiceAccount `METRICS_SCRAPER_NAMESPACE`, `METRICS_SCRAPER_SELECTOR` and
+`METRICS_SCRAPER_SERVICE_ACCOUNT` name, read from the cluster on each scrape. The three are set
+together or not at all, and with none set every scrape is refused. The metrics stack is still on
+the old path, where no render names it, so `deploy/env/release-gate/base.env` does. The rules
+that read the series live beside the platform's other alerts, in fleet-infra's
+`observability-rules`, until the observability Project moves to the estate path.
 
 Its grant is `get` on Canaries and Deployments, `list` on pods, `list` and `patch` on Jobs, and
 `get`, `list`, `create` and `update` on ConfigMaps. A ClusterRole cannot say "only the record"

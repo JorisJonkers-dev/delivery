@@ -450,6 +450,38 @@ func TestFlaggerIsThePodsOfTheDeliveryProjectsFlaggerProcess(t *testing.T) {
 	}
 }
 
+func TestTheScrapersAreThePodsTheGateIsToldOfAndNoneWhereItIsToldOfNone(t *testing.T) {
+	at := func(name, namespace string, labels map[string]string, account string, change func(*corev1.Pod), ip string) *corev1.Pod {
+		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels}}
+		p.Spec.ServiceAccountName = account
+		p.Status.Phase = corev1.PodRunning
+		p.Status.PodIPs = []corev1.PodIP{{IP: ip}}
+		if change != nil {
+			change(p)
+		}
+		return p
+	}
+	prometheus := map[string]string{"app.kubernetes.io/name": "prometheus"}
+	k := kube([]runtime.Object{
+		at("prometheus-0", "observability", prometheus, "metrics-stack-prometheus", nil, "10.42.2.40"),
+		// Another namespace, another identity, an ending pod and one on the host's network.
+		at("prometheus-0", "auth-system", prometheus, "metrics-stack-prometheus", nil, "10.42.2.41"),
+		at("prometheus-1", "observability", prometheus, "default", nil, "10.42.2.42"),
+		at("prometheus-2", "observability", prometheus, "metrics-stack-prometheus", func(p *corev1.Pod) { p.Status.Phase = corev1.PodSucceeded }, "10.42.2.43"),
+		at("prometheus-3", "observability", prometheus, "metrics-stack-prometheus", func(p *corev1.Pod) { p.Spec.HostNetwork = true }, "192.168.1.10"),
+		at("grafana-0", "observability", map[string]string{"app.kubernetes.io/name": "grafana"}, "metrics-stack-prometheus", nil, "10.42.2.44"),
+	})
+
+	if got, err := k.Scrapers(t.Context()); err != nil || got != nil {
+		t.Fatalf("told of no scraper: %v, %v", got, err)
+	}
+	k.Scraper = gate.Scraper{Namespace: "observability", Selector: "app.kubernetes.io/name=prometheus", ServiceAccount: "metrics-stack-prometheus"}
+	got, err := k.Scrapers(t.Context())
+	if err != nil || !slices.Equal(got, []string{"10.42.2.40"}) {
+		t.Fatalf("scrapers = %v, %v", got, err)
+	}
+}
+
 // synced is a sync object as the render writes it for an Application, kept past its release where
 // it names a revision.
 func synced(kind, name, application, revision string) *unstructured.Unstructured {

@@ -76,6 +76,25 @@ func tend(t *testing.T, c *cluster) gate.Standing {
 	return g.Standing()
 }
 
+// untimed is held releases without when each began and its deadline, which
+// TestAHeldReleaseSaysSinceWhenAndItsDeadline holds.
+func untimed(held []gate.Held) []gate.Held {
+	out := make([]gate.Held, 0, len(held))
+	for _, h := range held {
+		h.Since, h.Deadline = time.Time{}, 0
+		out = append(out, h)
+	}
+	return out
+}
+
+func TestAHeldReleaseSaysSinceWhenAndItsDeadline(t *testing.T) {
+	// The record saw the revision first, a round ago; the inputs give a 1800s deadline.
+	found := tend(t, failedRelease())
+	if len(found.Held) != 1 || !found.Held[0].Since.Equal(first) || found.Held[0].Deadline != 30*time.Minute {
+		t.Fatalf("held = %+v", found.Held)
+	}
+}
+
 func TestTheGateRecordsWhatAnApplicationServesAndWritesItOnce(t *testing.T) {
 	c := auth()
 	c.canaries = map[string]gate.Canary{
@@ -194,7 +213,7 @@ func TestAMigrationStartsOnlyWhileItsProofHolds(t *testing.T) {
 
 			found := tend(t, c)
 
-			if !slices.Equal(c.started, tc.started) || !slices.Equal(found.Held, tc.held) || found.Refused != nil {
+			if !slices.Equal(c.started, tc.started) || !slices.Equal(untimed(found.Held), tc.held) || found.Refused != nil {
 				t.Fatalf("started %v, standing %+v", c.started, found)
 			}
 		})
@@ -289,7 +308,7 @@ func TestTheDownStartsOnlyUnderEveryOneOfItsConditions(t *testing.T) {
 
 			found := tend(t, c)
 
-			if !slices.Equal(c.started, tc.started) || !slices.Equal(found.Held, tc.held) || !slices.Equal(found.Refused, tc.refused) {
+			if !slices.Equal(c.started, tc.started) || !slices.Equal(untimed(found.Held), tc.held) || !slices.Equal(found.Refused, tc.refused) {
 				t.Fatalf("started %v, standing %+v", c.started, found)
 			}
 		})
