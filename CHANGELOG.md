@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.13.1...v0.14.0) (2026-10-26)
+
+
+### Features
+
+* **gate:** hold a release whose native Client serves its protected path to anyone ([#89](https://github.com/JorisJonkers-dev/delivery/issues/89)) ([d69aef9](https://github.com/JorisJonkers-dev/delivery/commit/d69aef908ade6326e7e364a9d46523a86d0b9635))
+* **gate:** send the gate's own requests to the new copy on each analysis iteration ([#82](https://github.com/JorisJonkers-dev/delivery/issues/82)) ([c601a74](https://github.com/JorisJonkers-dev/delivery/commit/c601a7487fbdd7d1fa85b9cb4589df02aa74abe4))
+* **gate:** warm a revision up through its public hosts once it serves ([#83](https://github.com/JorisJonkers-dev/delivery/issues/83)) ([4beb45a](https://github.com/JorisJonkers-dev/delivery/commit/4beb45af5cf5c78f4e8bf6a6d00e1addaaaf1c30))
+* **reporter:** end a Rollout on what the Release Gate's warmup met ([#84](https://github.com/JorisJonkers-dev/delivery/issues/84)) ([4b04c9e](https://github.com/JorisJonkers-dev/delivery/commit/4b04c9ec13d53afeb8179cacfc40dfa0b5b2c0cc))
+
+
+### Bug Fixes
+
+* **postgres-catalog:** try a refused connection again until the policy admits the new pod ([#88](https://github.com/JorisJonkers-dev/delivery/issues/88)) ([e410be3](https://github.com/JorisJonkers-dev/delivery/commit/e410be31966bebd77bd209cb9a20288ecb082a46))
+* **vault-policy:** report as stale only names in the job's own namespace ([#80](https://github.com/JorisJonkers-dev/delivery/issues/80)) ([f7f2dc9](https://github.com/JorisJonkers-dev/delivery/commit/f7f2dc960ae1ae51e3768c76622b0d4aa6564e2e))
+
 ## [0.13.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.13.0...v0.13.1) (2026-10-22)
 
 
