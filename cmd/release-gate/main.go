@@ -5,7 +5,9 @@
 // releases are held. It reads the cluster it runs in and nothing else, serves
 // liveness and readiness probes, and drains on SIGTERM.
 //
-// Environment: ADDR (default :8080).
+// Environment: ADDR (default :8080). METRICS_SCRAPER_NAMESPACE, METRICS_SCRAPER_SELECTOR and
+// METRICS_SCRAPER_SERVICE_ACCOUNT name the metrics stack's pods, the one caller GET /metrics
+// answers: all three or none, and with none nobody may scrape the gate.
 package main
 
 import (
@@ -57,6 +59,9 @@ func start(parent context.Context, logger *slog.Logger, getenv func(string) stri
 	defer stop()
 
 	cluster, err := reader(config)
+	if err == nil {
+		cluster.Scraper, err = scraper(getenv)
+	}
 	if err != nil {
 		logger.Error("release-gate could not start", "error", err, "version", version)
 		return 1
@@ -81,6 +86,19 @@ func start(parent context.Context, logger *slog.Logger, getenv func(string) stri
 		return 1
 	}
 	return 0
+}
+
+// scraper reads who may scrape the gate: all three variables, or none of them.
+func scraper(getenv func(string) string) (gate.Scraper, error) {
+	s := gate.Scraper{
+		Namespace:      getenv("METRICS_SCRAPER_NAMESPACE"),
+		Selector:       getenv("METRICS_SCRAPER_SELECTOR"),
+		ServiceAccount: getenv("METRICS_SCRAPER_SERVICE_ACCOUNT"),
+	}
+	if (s.Namespace == "") == (s.Selector == "") && (s.Selector == "") == (s.ServiceAccount == "") {
+		return s, nil
+	}
+	return gate.Scraper{}, errors.New("METRICS_SCRAPER_NAMESPACE, METRICS_SCRAPER_SELECTOR and METRICS_SCRAPER_SERVICE_ACCOUNT are set together or not at all")
 }
 
 // reader builds the two clients the gate reads the cluster through.

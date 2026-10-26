@@ -79,6 +79,10 @@ type Held struct {
 	Serving string
 	Pinned  string
 	Reason  string
+	// Since is when the gate first saw Pinned applied and not serving, and Deadline the
+	// Application's gate deadline: a release held past it is one nothing will move on its own.
+	Since    time.Time
+	Deadline time.Duration
 }
 
 // Refused is one migration the gate will not undo, or could not: an urgent alert.
@@ -271,7 +275,9 @@ func (g *Gate) tend(ctx context.Context, a Gated, now time.Time) (*Held, *Refuse
 	if reason == "" {
 		return nil, nil, nil
 	}
-	held := &Held{Gated: a, Serving: r.record.Serving, Pinned: r.pinned, Reason: reason}
+	// The inputs' deadline is held to deploy-kit's duration pattern as they parse.
+	deadline, _ := time.ParseDuration(r.inputs.Deadline)
+	held := &Held{Gated: a, Serving: r.record.Serving, Pinned: r.pinned, Reason: reason, Since: r.record.Since, Deadline: deadline}
 	// Only a migration that ran can be undone: a stale proof left the schema untouched.
 	if up == nil || (!up.Complete && !up.Failed) {
 		return held, nil, nil

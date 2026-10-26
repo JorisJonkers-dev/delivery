@@ -55,6 +55,18 @@ func (c *cluster) Flagger(context.Context) ([]string, error) {
 	return []string{"10.42.0.7", "127.0.0.1", "::1"}, nil
 }
 
+// The metrics stack's pods: the test server is called from this machine, so a scrape from it is
+// the metrics stack's, unless every caller is a stranger.
+func (c *cluster) Scrapers(context.Context) ([]string, error) {
+	if c.away == "scrapers" {
+		return nil, errAway
+	}
+	if c.strangers {
+		return []string{"10.42.5.5"}, nil
+	}
+	return []string{"127.0.0.1", "::1"}, nil
+}
+
 func (c *cluster) Inputs(context.Context, string, string) (string, error) {
 	if c.away == "inputs" {
 		return "", errAway

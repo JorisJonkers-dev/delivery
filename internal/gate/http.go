@@ -55,19 +55,24 @@ const refused = "only Flagger asks the Release Gate"
 // credential a webhook could carry, so the gate goes by where the connection comes from: a pod's
 // address is its own inside the cluster. A forwarded-for header is not read: anyone can write one.
 func (g *Gate) fromFlagger(r *http.Request) (bool, error) {
+	return from(r, "Flagger's", g.cluster.Flagger)
+}
+
+// from reports whether a request comes from one of the pods pods lists, by its address alone.
+func from(r *http.Request, whose string, pods func(context.Context) ([]string, error)) (bool, error) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return false, nil //nolint:nilerr // an address that does not parse is not Flagger's
+		return false, nil //nolint:nilerr // an address that does not parse is not a pod's
 	}
 	caller, err := netip.ParseAddr(host)
 	if err != nil {
-		return false, nil //nolint:nilerr // an address that does not parse is not Flagger's
+		return false, nil //nolint:nilerr // an address that does not parse is not a pod's
 	}
-	pods, err := g.cluster.Flagger(r.Context())
+	listed, err := pods(r.Context())
 	if err != nil {
-		return false, fmt.Errorf("gate: read Flagger's pods: %w", err)
+		return false, fmt.Errorf("gate: read %s pods: %w", whose, err)
 	}
-	for _, pod := range pods {
+	for _, pod := range listed {
 		if address, err := netip.ParseAddr(pod); err == nil && address.Unmap() == caller.Unmap() {
 			return true, nil
 		}
@@ -81,6 +86,11 @@ func (g *Gate) fromFlagger(r *http.Request) (bool, error) {
 // also no. Flagger records a refusal's
 // body on the Canary, so a 409 says what the release waits on.
 func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
+	mux.HandleFunc("GET "+PathMetrics, func(w http.ResponseWriter, r *http.Request) {
+		g.metricsRoute(w, r, func(err error) {
+			logger.ErrorContext(r.Context(), "release gate could not tell who scrapes it", "error", err)
+		})
+	})
 	mux.HandleFunc("GET "+PathReleases, func(w http.ResponseWriter, r *http.Request) {
 		g.releasesRoute(w, r, func(err error) {
 			logger.ErrorContext(r.Context(), "release gate could not read the releases", "error", err)

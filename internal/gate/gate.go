@@ -117,6 +117,9 @@ type Pod struct {
 type Cluster interface {
 	// Flagger returns the addresses of Flagger's own pods: the only callers the gate answers.
 	Flagger(ctx context.Context) ([]string, error)
+	// Scrapers returns the addresses of the metrics stack's pods: the only callers GET /metrics
+	// answers. None where the gate is not told who the metrics stack is.
+	Scrapers(ctx context.Context) ([]string, error)
 	// Inputs returns the Application's release-gate ConfigMap's one value.
 	Inputs(ctx context.Context, namespace, application string) (string, error)
 	// Jobs returns the Jobs of the Application: every one labelled as part of it.

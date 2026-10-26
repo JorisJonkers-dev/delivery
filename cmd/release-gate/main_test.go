@@ -91,3 +91,38 @@ func TestTheBinaryAnswersTheGatesWebhooks_andNoWhenItCannotReadTheCluster(t *tes
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestTheScraperIsNamedWholeOrNotAtAll(t *testing.T) {
+	whole := map[string]string{
+		"METRICS_SCRAPER_NAMESPACE":       "observability",
+		"METRICS_SCRAPER_SELECTOR":        "app.kubernetes.io/name=prometheus",
+		"METRICS_SCRAPER_SERVICE_ACCOUNT": "metrics-stack-prometheus",
+	}
+	got, err := scraper(func(key string) string { return whole[key] })
+	if err != nil || got.Namespace != "observability" || got.Selector != "app.kubernetes.io/name=prometheus" || got.ServiceAccount != "metrics-stack-prometheus" {
+		t.Fatalf("whole: %+v, %v", got, err)
+	}
+	if got, err := scraper(func(string) string { return "" }); err != nil || got.Namespace != "" {
+		t.Fatalf("none: %+v, %v", got, err)
+	}
+	for missing := range whole {
+		partial := func(key string) string {
+			if key == missing {
+				return ""
+			}
+			return whole[key]
+		}
+		if _, err := scraper(partial); err == nil {
+			t.Fatalf("a scraper without %s was taken", missing)
+		}
+		addr := func(key string) string {
+			if key == "ADDR" {
+				return "127.0.0.1:0"
+			}
+			return partial(key)
+		}
+		if code := start(t.Context(), quiet(), addr, unreachable()); code != 1 {
+			t.Fatalf("started without %s: %d", missing, code)
+		}
+	}
+}
