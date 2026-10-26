@@ -59,6 +59,8 @@ jobs:
             args: "--build-arg APP=vault-policy"
           - image: postgres-catalog
             args: "--build-arg APP=postgres-catalog"
+          - image: garage-catalog
+            args: "--build-arg APP=garage-catalog"
           - image: file-backup
             args: "--file backup.Dockerfile --target file-backup"
           - image: postgres-backup

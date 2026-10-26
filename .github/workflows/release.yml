@@ -114,7 +114,7 @@ jobs:
             } >> images.lock.yml
             echo "published ${image}@${digest} as ${user}"
           }
-          for app in release-gate collector reporter vault-policy postgres-catalog; do
+          for app in release-gate collector reporter vault-policy postgres-catalog garage-catalog; do
             build "$app" --build-arg APP="$app"
           done
           # The backup method images the Platform document's engines name. The
