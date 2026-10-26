@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/JorisJonkers-dev/delivery/internal/bucketcatalog"
+	"github.com/JorisJonkers-dev/delivery/internal/offcluster/garagetest"
 	"github.com/JorisJonkers-dev/delivery/internal/vaultpolicy"
 )
 
@@ -90,5 +93,41 @@ func TestTheAdminTokenIsReadWhereTheCatalogSaysAndMustBeThere(t *testing.T) {
 	}
 	if _, err := adminToken(t.Context(), vault(t, nil), bucketcatalog.Admin{Path: "secret/data/elsewhere", Token: "t"}); err == nil {
 		t.Error("a path Vault refuses gave a token")
+	}
+}
+
+// TestARunAppliesTheCatalogAgainstARealGarage drives the command end to end: it logs in to a
+// Vault that holds the admin token and no key, applies the catalog to a real Garage, and writes
+// the minted key where the catalog says.
+func TestARunAppliesTheCatalogAgainstARealGarage(t *testing.T) {
+	_, admin := garagetest.StartAdmin(t)
+	endpoint, err := url.Parse(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/auth/kubernetes/login":
+			_ = json.NewEncoder(w).Encode(map[string]any{"auth": map[string]string{"client_token": "t"}})
+		case r.URL.Path == "/v1/secret/data/platform/garage":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"data": map[string]string{"admin-token": garagetest.AdminToken}}})
+		case r.URL.Path == "/v1/secret/data/knowledge-platform/garage/s3" && r.Method == http.MethodPost:
+			_ = json.NewDecoder(r.Body).Decode(&written)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	body := strings.Replace(strings.Replace(catalog, "garage.data-system.svc.cluster.local", endpoint.Hostname(), 1), `"port":3903`, `"port":`+endpoint.Port(), 1)
+	env := map[string]string{"VAULT_ADDR": server.URL, "VAULT_ROLE": "data-system-garage-catalog", "CATALOG_FILE": file(t, body), "TOKEN_FILE": "jwt"}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	if code := start(t.Context(), logger, func(key string) string { return env[key] }, func(string) ([]byte, error) { return []byte("jwt\n"), nil }); code != 0 {
+		t.Fatalf("exited %d", code)
+	}
+	data, _ := written["data"].(map[string]any)
+	options, _ := written["options"].(map[string]any)
+	if id, _ := data["access-key-id"].(string); !strings.HasPrefix(id, "GK") || data["secret-access-key"] == "" || options["cas"] != float64(0) {
+		t.Fatalf("wrote %v", written)
 	}
 }
