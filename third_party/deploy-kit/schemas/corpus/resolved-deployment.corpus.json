@@ -77,6 +77,7 @@
               {
                 "certificates": "acme",
                 "host": "notes.jorisjonkers.dev",
+                "ingressClass": "traefik-public",
                 "listener": "tls",
                 "name": "public",
                 "proxy": {
@@ -286,6 +287,7 @@
               {
                 "certificates": "acme",
                 "host": "notes.jorisjonkers.dev",
+                "ingressClass": "traefik-public",
                 "listener": "tls",
                 "name": "public",
                 "proxy": {

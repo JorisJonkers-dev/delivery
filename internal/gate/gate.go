@@ -478,7 +478,49 @@ func (g *Gate) MayPromote(ctx context.Context, q Question) (Answer, error) {
 			return no("%s", waits), nil
 		}
 	}
-	return yes("every member passed its analysis or did not change"), nil
+	const passed = "every member passed its analysis or did not change"
+	if read.gate.ProtectedPath == nil {
+		return yes(passed), nil
+	}
+	refuses, err := g.refuses(ctx, q, read)
+	if err != nil || !refuses.Yes {
+		return refuses, err
+	}
+	return yes(passed + ", and " + refuses.Why), nil
+}
+
+// refuses asks the member that serves a native Client's protected path for it, as a stranger
+// would: with no credentials, and following no redirect (deploy-kit
+// spec/v1/55-delivery.md#the-release-gate). A 2xx is E_CLIENT_OPEN, and no answer is no. A member
+// that did not change in the release is not asked: its image was asked when it last did.
+func (g *Gate) refuses(ctx context.Context, q Question, read reading) (Answer, error) {
+	path, by := *read.gate.ProtectedPath, read.gate.ProtectedBy
+	if by == nil || !slices.ContainsFunc(read.gate.Members, func(m resolved.GateMember) bool { return m.Process == *by }) {
+		return Answer{}, fmt.Errorf("gate: the inputs name no member that serves the protected path %q", path)
+	}
+	if !requestable.MatchString(path) {
+		return Answer{}, fmt.Errorf("gate: the inputs hand a protected path the gate does not request: %q", path)
+	}
+	canary, unchanged, err := g.protector(ctx, q, read, *by)
+	if err != nil {
+		return Answer{}, err
+	}
+	if unchanged {
+		return yes(*by + ", which did not change, was asked when it last did"), nil
+	}
+	if canary.Port <= 0 || canary.Port > 65535 {
+		return Answer{}, fmt.Errorf("%w: %s", errNoPort, *by)
+	}
+	url := fmt.Sprintf("http://%s-canary.%s.svc.cluster.local:%d%s", *by, q.Namespace, canary.Port, path)
+	status, _, err := g.traffic.Get(ctx, url)
+	switch {
+	case err != nil:
+		//nolint:nilerr // no answer is the answer no, not a question the gate could not answer
+		return no("%s did not answer %s, so it is not shown to refuse it", *by, path), nil
+	case status >= 200 && status < 300:
+		return no("E_CLIENT_OPEN: %s serves %s to anyone (%d)", *by, path, status), nil
+	}
+	return yes(fmt.Sprintf("%s refuses %s to a stranger (%d)", *by, path, status)), nil
 }
 
 // holds says what, if anything, another member of the Application holds the barrier shut with:
@@ -513,4 +555,25 @@ func (g *Gate) holds(ctx context.Context, q Question, process string) (string, e
 		return process + " changed and has not started its analysis", nil
 	}
 	return "", nil
+}
+
+// protector reads the Canary of the member that serves the protected path, and says whether it
+// did not change in the release: Flagger records it as settled and its primary runs what its
+// Deployment holds. The member that asks is being promoted, so it changed.
+func (g *Gate) protector(ctx context.Context, q Question, read reading, by string) (Canary, bool, error) {
+	if by == q.Process {
+		return read.canary, false, nil
+	}
+	canary, err := g.cluster.Canary(ctx, q.Namespace, by)
+	if err != nil {
+		return Canary{}, false, fmt.Errorf("gate: read the Canary of %s: %w", by, err)
+	}
+	if !settled(canary) {
+		return canary, false, nil
+	}
+	serves, err := g.cluster.Serves(ctx, q.Namespace, by)
+	if err != nil {
+		return Canary{}, false, fmt.Errorf("gate: compare %s with its primary: %w", by, err)
+	}
+	return canary, serves, nil
 }

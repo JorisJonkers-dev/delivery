@@ -283,6 +283,9 @@ type BackupPlan struct {
 	// Method corresponds to the JSON schema field "method".
 	Method string `json:"method"`
 
+	// MethodVersion corresponds to the JSON schema field "methodVersion".
+	MethodVersion *string `json:"methodVersion,omitempty,omitzero"`
+
 	// OffCluster corresponds to the JSON schema field "offCluster".
 	OffCluster *string `json:"offCluster,omitempty,omitzero"`
 
@@ -348,6 +351,9 @@ func (j *BackupPlan) UnmarshalJSON(value []byte) error {
 	}
 	if utf8.RuneCountInString(string(plain.Method)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "method", 1)
+	}
+	if plain.MethodVersion != nil && utf8.RuneCountInString(string(*plain.MethodVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "methodVersion", 1)
 	}
 	if plain.OffCluster != nil && utf8.RuneCountInString(string(*plain.OffCluster)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "offCluster", 1)
@@ -516,6 +522,36 @@ func (j *ClientAddress) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ClientAddress, v)
 	}
 	*j = ClientAddress(v)
+	return nil
+}
+
+type ClientCredential string
+
+const ClientCredentialPkce ClientCredential = "pkce"
+const ClientCredentialSecret ClientCredential = "secret"
+
+var enumValues_ClientCredential = []interface{}{
+	"secret",
+	"pkce",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ClientCredential) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_ClientCredential {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_ClientCredential, v)
+	}
+	*j = ClientCredential(v)
 	return nil
 }
 
@@ -867,6 +903,53 @@ func (j *EnvEntry) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type GateAddress struct {
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+
+	// Namespace corresponds to the JSON schema field "namespace".
+	Namespace string `json:"namespace"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port int `json:"port"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GateAddress) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in GateAddress: required")
+	}
+	if _, ok := raw["namespace"]; raw != nil && !ok {
+		return fmt.Errorf("field namespace in GateAddress: required")
+	}
+	if _, ok := raw["port"]; raw != nil && !ok {
+		return fmt.Errorf("field port in GateAddress: required")
+	}
+	type Plain GateAddress
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
+	}
+	if 65535 < plain.Port {
+		return fmt.Errorf("field %s: must be <= %v", "port", 65535)
+	}
+	if 1 > plain.Port {
+		return fmt.Errorf("field %s: must be >= %v", "port", 1)
+	}
+	*j = GateAddress(plain)
+	return nil
+}
+
 type GateAnalysis struct {
 	// ErrorRate corresponds to the JSON schema field "errorRate".
 	ErrorRate string `json:"errorRate"`
@@ -1014,6 +1097,32 @@ func (j *GateMember) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type GateMembersPeer struct {
+	// Rule corresponds to the JSON schema field "rule".
+	Rule string `json:"rule"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *GateMembersPeer) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["rule"]; raw != nil && !ok {
+		return fmt.Errorf("field rule in GateMembersPeer: required")
+	}
+	type Plain GateMembersPeer
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Rule != "gate-members" {
+		return fmt.Errorf("field %s: must be equal to %s", "rule", "gate-members")
+	}
+	*j = GateMembersPeer(plain)
+	return nil
+}
+
 type GateMigration struct {
 	// Identity corresponds to the JSON schema field "identity".
 	Identity string `json:"identity"`
@@ -1118,6 +1227,23 @@ func (j *HardeningClass) UnmarshalJSON(value []byte) error {
 }
 
 type IngressPeer struct {
+	// Consumes corresponds to the JSON schema field "consumes".
+	Consumes *string `json:"consumes,omitempty,omitzero"`
+
+	// Namespace corresponds to the JSON schema field "namespace".
+	Namespace *string `json:"namespace,omitempty,omitzero"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port int `json:"port"`
+
+	// Process corresponds to the JSON schema field "process".
+	Process *string `json:"process,omitempty,omitzero"`
+
+	// Rule corresponds to the JSON schema field "rule".
+	Rule IngressRule `json:"rule"`
+}
+
+type IngressPeer_0 struct {
 	// Namespace corresponds to the JSON schema field "namespace".
 	Namespace string `json:"namespace"`
 
@@ -1132,24 +1258,24 @@ type IngressPeer struct {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *IngressPeer) UnmarshalJSON(value []byte) error {
+func (j *IngressPeer_0) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["namespace"]; raw != nil && !ok {
-		return fmt.Errorf("field namespace in IngressPeer: required")
+		return fmt.Errorf("field namespace in IngressPeer_0: required")
 	}
 	if _, ok := raw["port"]; raw != nil && !ok {
-		return fmt.Errorf("field port in IngressPeer: required")
+		return fmt.Errorf("field port in IngressPeer_0: required")
 	}
 	if _, ok := raw["process"]; raw != nil && !ok {
-		return fmt.Errorf("field process in IngressPeer: required")
+		return fmt.Errorf("field process in IngressPeer_0: required")
 	}
 	if _, ok := raw["rule"]; raw != nil && !ok {
-		return fmt.Errorf("field rule in IngressPeer: required")
+		return fmt.Errorf("field rule in IngressPeer_0: required")
 	}
-	type Plain IngressPeer
+	type Plain IngressPeer_0
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
@@ -1166,6 +1292,80 @@ func (j *IngressPeer) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Process)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "process", 1)
 	}
+	*j = IngressPeer_0(plain)
+	return nil
+}
+
+type IngressPeer_1 struct {
+	// Consumes corresponds to the JSON schema field "consumes".
+	Consumes string `json:"consumes"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port int `json:"port"`
+
+	// Rule corresponds to the JSON schema field "rule".
+	Rule string `json:"rule"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *IngressPeer_1) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["consumes"]; raw != nil && !ok {
+		return fmt.Errorf("field consumes in IngressPeer_1: required")
+	}
+	if _, ok := raw["port"]; raw != nil && !ok {
+		return fmt.Errorf("field port in IngressPeer_1: required")
+	}
+	if _, ok := raw["rule"]; raw != nil && !ok {
+		return fmt.Errorf("field rule in IngressPeer_1: required")
+	}
+	type Plain IngressPeer_1
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Consumes)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "consumes", 1)
+	}
+	if 65535 < plain.Port {
+		return fmt.Errorf("field %s: must be <= %v", "port", 65535)
+	}
+	if 1 > plain.Port {
+		return fmt.Errorf("field %s: must be >= %v", "port", 1)
+	}
+	if plain.Rule != "consumer" {
+		return fmt.Errorf("field %s: must be equal to %s", "rule", "consumer")
+	}
+	*j = IngressPeer_1(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *IngressPeer) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	var ingressPeer_0 IngressPeer_0
+	var ingressPeer_1 IngressPeer_1
+	var errs []error
+	if err := ingressPeer_0.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if err := ingressPeer_1.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 2 {
+		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
+	}
+	type Plain IngressPeer
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
 	*j = IngressPeer(plain)
 	return nil
 }
@@ -1173,19 +1373,17 @@ func (j *IngressPeer) UnmarshalJSON(value []byte) error {
 type IngressRule string
 
 const IngressRuleBackup IngressRule = "backup"
-const IngressRuleConsumer IngressRule = "consumer"
 const IngressRuleFluxEvents IngressRule = "flux-events"
 const IngressRuleMetricsStack IngressRule = "metrics-stack"
-const IngressRuleMigration IngressRule = "migration"
+const IngressRuleReleaseGate IngressRule = "release-gate"
 const IngressRuleTierProxy IngressRule = "tier-proxy"
 
 var enumValues_IngressRule = []interface{}{
 	"tier-proxy",
 	"metrics-stack",
-	"consumer",
 	"backup",
-	"migration",
 	"flux-events",
+	"release-gate",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1275,6 +1473,36 @@ func (j *InternetEgress) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type L4Protocol string
+
+const L4ProtocolTCP L4Protocol = "tcp"
+const L4ProtocolUdp L4Protocol = "udp"
+
+var enumValues_L4Protocol = []interface{}{
+	"tcp",
+	"udp",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *L4Protocol) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_L4Protocol {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_L4Protocol, v)
+	}
+	*j = L4Protocol(v)
+	return nil
+}
+
 type LibraryAccess string
 
 const LibraryAccessRead LibraryAccess = "read"
@@ -1310,11 +1538,13 @@ type Lifecycle string
 const LifecycleApplication Lifecycle = "application"
 const LifecycleJob Lifecycle = "job"
 const LifecyclePrepare Lifecycle = "prepare"
+const LifecycleScheduled Lifecycle = "scheduled"
 
 var enumValues_Lifecycle = []interface{}{
 	"application",
 	"job",
 	"prepare",
+	"scheduled",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1822,6 +2052,12 @@ type ReleaseGate struct {
 
 	// Migration corresponds to the JSON schema field "migration".
 	Migration *GateMigration `json:"migration,omitempty,omitzero"`
+
+	// ProtectedBy corresponds to the JSON schema field "protectedBy".
+	ProtectedBy *string `json:"protectedBy,omitempty,omitzero"`
+
+	// ProtectedPath corresponds to the JSON schema field "protectedPath".
+	ProtectedPath *string `json:"protectedPath,omitempty,omitzero"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -1856,7 +2092,77 @@ func (j *ReleaseGate) UnmarshalJSON(value []byte) error {
 	if plain.Members != nil && len(plain.Members) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "members", 1)
 	}
+	if plain.ProtectedBy != nil && utf8.RuneCountInString(string(*plain.ProtectedBy)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "protectedBy", 1)
+	}
+	if plain.ProtectedPath != nil && utf8.RuneCountInString(string(*plain.ProtectedPath)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "protectedPath", 1)
+	}
 	*j = ReleaseGate(plain)
+	return nil
+}
+
+type ResolvedAlertRules struct {
+	// From corresponds to the JSON schema field "from".
+	From string `json:"from"`
+
+	// Groups corresponds to the JSON schema field "groups".
+	Groups []interface{} `json:"groups"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedAlertRules) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["from"]; raw != nil && !ok {
+		return fmt.Errorf("field from in ResolvedAlertRules: required")
+	}
+	if _, ok := raw["groups"]; raw != nil && !ok {
+		return fmt.Errorf("field groups in ResolvedAlertRules: required")
+	}
+	type Plain ResolvedAlertRules
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.From)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "from", 1)
+	}
+	if plain.Groups != nil && len(plain.Groups) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "groups", 1)
+	}
+	*j = ResolvedAlertRules(plain)
+	return nil
+}
+
+type ResolvedAlerting struct {
+	// Receivers corresponds to the JSON schema field "receivers".
+	Receivers []ResolvedReceiver `json:"receivers"`
+
+	// Routes corresponds to the JSON schema field "routes".
+	Routes []ResolvedSeverityRoute `json:"routes"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedAlerting) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["receivers"]; raw != nil && !ok {
+		return fmt.Errorf("field receivers in ResolvedAlerting: required")
+	}
+	if _, ok := raw["routes"]; raw != nil && !ok {
+		return fmt.Errorf("field routes in ResolvedAlerting: required")
+	}
+	type Plain ResolvedAlerting
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ResolvedAlerting(plain)
 	return nil
 }
 
@@ -1952,11 +2258,26 @@ type ResolvedApplication struct {
 	// AlertClass corresponds to the JSON schema field "alertClass".
 	AlertClass *AlertClass `json:"alertClass,omitempty,omitzero"`
 
+	// AlertRules corresponds to the JSON schema field "alertRules".
+	AlertRules []ResolvedAlertRules `json:"alertRules,omitempty,omitzero"`
+
+	// Alerting corresponds to the JSON schema field "alerting".
+	Alerting *ResolvedAlerting `json:"alerting,omitempty,omitzero"`
+
+	// Client corresponds to the JSON schema field "client".
+	Client *ResolvedClient `json:"client,omitempty,omitzero"`
+
+	// Dashboards corresponds to the JSON schema field "dashboards".
+	Dashboards *ResolvedDashboards `json:"dashboards,omitempty,omitzero"`
+
 	// Exposure corresponds to the JSON schema field "exposure".
 	Exposure []ResolvedExposure `json:"exposure,omitempty,omitzero"`
 
 	// ID corresponds to the JSON schema field "id".
 	ID string `json:"id"`
+
+	// Mesh corresponds to the JSON schema field "mesh".
+	Mesh *ResolvedMesh `json:"mesh,omitempty,omitzero"`
 
 	// Migration corresponds to the JSON schema field "migration".
 	Migration *ResolvedMigration `json:"migration,omitempty,omitzero"`
@@ -2017,6 +2338,9 @@ func (j *ResolvedApplication) UnmarshalJSON(value []byte) error {
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
+	}
+	if plain.AlertRules != nil && len(plain.AlertRules) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "alertRules", 1)
 	}
 	if utf8.RuneCountInString(string(plain.ID)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "id", 1)
@@ -2117,6 +2441,9 @@ type ResolvedCatalogJob struct {
 	// Catalog corresponds to the JSON schema field "catalog".
 	Catalog ResolvedCatalog `json:"catalog"`
 
+	// Consumes corresponds to the JSON schema field "consumes".
+	Consumes []string `json:"consumes"`
+
 	// Cpu corresponds to the JSON schema field "cpu".
 	Cpu string `json:"cpu"`
 
@@ -2138,8 +2465,14 @@ type ResolvedCatalogJob struct {
 	// Image corresponds to the JSON schema field "image".
 	Image string `json:"image"`
 
+	// ImageVersion corresponds to the JSON schema field "imageVersion".
+	ImageVersion *string `json:"imageVersion,omitempty,omitzero"`
+
 	// Memory corresponds to the JSON schema field "memory".
 	Memory string `json:"memory"`
+
+	// Mesh corresponds to the JSON schema field "mesh".
+	Mesh *ResolvedMesh `json:"mesh,omitempty,omitzero"`
 
 	// Namespace corresponds to the JSON schema field "namespace".
 	Namespace string `json:"namespace"`
@@ -2162,6 +2495,9 @@ func (j *ResolvedCatalogJob) UnmarshalJSON(value []byte) error {
 	}
 	if _, ok := raw["catalog"]; raw != nil && !ok {
 		return fmt.Errorf("field catalog in ResolvedCatalogJob: required")
+	}
+	if _, ok := raw["consumes"]; raw != nil && !ok {
+		return fmt.Errorf("field consumes in ResolvedCatalogJob: required")
 	}
 	if _, ok := raw["cpu"]; raw != nil && !ok {
 		return fmt.Errorf("field cpu in ResolvedCatalogJob: required")
@@ -2225,6 +2561,9 @@ func (j *ResolvedCatalogJob) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Image)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "image", 1)
 	}
+	if plain.ImageVersion != nil && utf8.RuneCountInString(string(*plain.ImageVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "imageVersion", 1)
+	}
 	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
 	}
@@ -2286,6 +2625,229 @@ func (j *ResolvedCatalog) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "port", 1)
 	}
 	*j = ResolvedCatalog(plain)
+	return nil
+}
+
+type ResolvedClient struct {
+	// Credential corresponds to the JSON schema field "credential".
+	Credential *ClientCredential `json:"credential,omitempty,omitzero"`
+
+	// Description corresponds to the JSON schema field "description".
+	Description *string `json:"description,omitempty,omitzero"`
+
+	// Host corresponds to the JSON schema field "host".
+	Host string `json:"host"`
+
+	// IconURL corresponds to the JSON schema field "iconUrl".
+	IconURL *string `json:"iconUrl,omitempty,omitzero"`
+
+	// Label corresponds to the JSON schema field "label".
+	Label *string `json:"label,omitempty,omitzero"`
+
+	// LaunchURL corresponds to the JSON schema field "launchUrl".
+	LaunchURL *string `json:"launchUrl,omitempty,omitzero"`
+
+	// RedirectUris corresponds to the JSON schema field "redirectUris".
+	RedirectUris []string `json:"redirectUris,omitempty,omitzero"`
+
+	// Roles corresponds to the JSON schema field "roles".
+	Roles []string `json:"roles"`
+
+	// SecretPath corresponds to the JSON schema field "secretPath".
+	SecretPath *string `json:"secretPath,omitempty,omitzero"`
+
+	// SignIn corresponds to the JSON schema field "signIn".
+	SignIn SignInMode `json:"signIn"`
+}
+
+type ResolvedClientGrant struct {
+	// Client corresponds to the JSON schema field "client".
+	Client string `json:"client"`
+
+	// Delivery corresponds to the JSON schema field "delivery".
+	Delivery string `json:"delivery"`
+
+	// Paths corresponds to the JSON schema field "paths".
+	Paths []PolicyPath `json:"paths"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedClientGrant) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["client"]; raw != nil && !ok {
+		return fmt.Errorf("field client in ResolvedClientGrant: required")
+	}
+	if _, ok := raw["delivery"]; raw != nil && !ok {
+		return fmt.Errorf("field delivery in ResolvedClientGrant: required")
+	}
+	if _, ok := raw["paths"]; raw != nil && !ok {
+		return fmt.Errorf("field paths in ResolvedClientGrant: required")
+	}
+	type Plain ResolvedClientGrant
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Client)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "client", 1)
+	}
+	if plain.Delivery != "self" {
+		return fmt.Errorf("field %s: must be equal to %s", "delivery", "self")
+	}
+	if plain.Paths != nil && len(plain.Paths) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "paths", 1)
+	}
+	*j = ResolvedClientGrant(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedClient) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["host"]; raw != nil && !ok {
+		return fmt.Errorf("field host in ResolvedClient: required")
+	}
+	if _, ok := raw["roles"]; raw != nil && !ok {
+		return fmt.Errorf("field roles in ResolvedClient: required")
+	}
+	if _, ok := raw["signIn"]; raw != nil && !ok {
+		return fmt.Errorf("field signIn in ResolvedClient: required")
+	}
+	type Plain ResolvedClient
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Description != nil && utf8.RuneCountInString(string(*plain.Description)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "description", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Host)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "host", 1)
+	}
+	if plain.IconURL != nil && utf8.RuneCountInString(string(*plain.IconURL)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "iconUrl", 1)
+	}
+	if plain.Label != nil && utf8.RuneCountInString(string(*plain.Label)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "label", 1)
+	}
+	if plain.LaunchURL != nil && utf8.RuneCountInString(string(*plain.LaunchURL)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "launchUrl", 1)
+	}
+	if plain.RedirectUris != nil && len(plain.RedirectUris) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "redirectUris", 1)
+	}
+	if plain.Roles != nil && len(plain.Roles) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "roles", 1)
+	}
+	if plain.SecretPath != nil && utf8.RuneCountInString(string(*plain.SecretPath)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "secretPath", 1)
+	}
+	*j = ResolvedClient(plain)
+	return nil
+}
+
+type ResolvedDashboard struct {
+	// Content corresponds to the JSON schema field "content".
+	Content string `json:"content"`
+
+	// From corresponds to the JSON schema field "from".
+	From string `json:"from"`
+
+	// Inputs corresponds to the JSON schema field "inputs".
+	Inputs []string `json:"inputs"`
+
+	// Uid corresponds to the JSON schema field "uid".
+	Uid string `json:"uid"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedDashboard) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["content"]; raw != nil && !ok {
+		return fmt.Errorf("field content in ResolvedDashboard: required")
+	}
+	if _, ok := raw["from"]; raw != nil && !ok {
+		return fmt.Errorf("field from in ResolvedDashboard: required")
+	}
+	if _, ok := raw["inputs"]; raw != nil && !ok {
+		return fmt.Errorf("field inputs in ResolvedDashboard: required")
+	}
+	if _, ok := raw["uid"]; raw != nil && !ok {
+		return fmt.Errorf("field uid in ResolvedDashboard: required")
+	}
+	type Plain ResolvedDashboard
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.From)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "from", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Uid)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "uid", 1)
+	}
+	*j = ResolvedDashboard(plain)
+	return nil
+}
+
+type ResolvedDashboards struct {
+	// Datasource corresponds to the JSON schema field "datasource".
+	Datasource string `json:"datasource"`
+
+	// Files corresponds to the JSON schema field "files".
+	Files []ResolvedDashboard `json:"files"`
+
+	// Folder corresponds to the JSON schema field "folder".
+	Folder string `json:"folder"`
+
+	// Instance corresponds to the JSON schema field "instance".
+	Instance ResolvedDashboardsInstance `json:"instance"`
+}
+
+type ResolvedDashboardsInstance map[string]string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedDashboards) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["datasource"]; raw != nil && !ok {
+		return fmt.Errorf("field datasource in ResolvedDashboards: required")
+	}
+	if _, ok := raw["files"]; raw != nil && !ok {
+		return fmt.Errorf("field files in ResolvedDashboards: required")
+	}
+	if _, ok := raw["folder"]; raw != nil && !ok {
+		return fmt.Errorf("field folder in ResolvedDashboards: required")
+	}
+	if _, ok := raw["instance"]; raw != nil && !ok {
+		return fmt.Errorf("field instance in ResolvedDashboards: required")
+	}
+	type Plain ResolvedDashboards
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Datasource)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "datasource", 1)
+	}
+	if plain.Files != nil && len(plain.Files) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "files", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Folder)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "folder", 1)
+	}
+	*j = ResolvedDashboards(plain)
 	return nil
 }
 
@@ -2384,6 +2946,41 @@ type ResolvedEdge struct {
 
 	// Target corresponds to the JSON schema field "target".
 	Target *string `json:"target,omitempty,omitzero"`
+}
+
+type ResolvedEdgeProxy struct {
+	// IngressClass corresponds to the JSON schema field "ingressClass".
+	IngressClass string `json:"ingressClass"`
+
+	// Resolver corresponds to the JSON schema field "resolver".
+	Resolver *ResolvedResolver `json:"resolver,omitempty,omitzero"`
+
+	// Tls corresponds to the JSON schema field "tls".
+	Tls bool `json:"tls"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedEdgeProxy) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["ingressClass"]; raw != nil && !ok {
+		return fmt.Errorf("field ingressClass in ResolvedEdgeProxy: required")
+	}
+	if _, ok := raw["tls"]; raw != nil && !ok {
+		return fmt.Errorf("field tls in ResolvedEdgeProxy: required")
+	}
+	type Plain ResolvedEdgeProxy
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.IngressClass)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "ingressClass", 1)
+	}
+	*j = ResolvedEdgeProxy(plain)
+	return nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -2582,8 +3179,14 @@ type ResolvedExposure struct {
 	// Certificates corresponds to the JSON schema field "certificates".
 	Certificates CertificateSource `json:"certificates"`
 
+	// Dns corresponds to the JSON schema field "dns".
+	Dns *ResolvedTierDns `json:"dns,omitempty,omitzero"`
+
 	// Host corresponds to the JSON schema field "host".
 	Host string `json:"host"`
+
+	// IngressClass corresponds to the JSON schema field "ingressClass".
+	IngressClass string `json:"ingressClass"`
 
 	// Listener corresponds to the JSON schema field "listener".
 	Listener Listener `json:"listener"`
@@ -2613,6 +3216,9 @@ func (j *ResolvedExposure) UnmarshalJSON(value []byte) error {
 	if _, ok := raw["host"]; raw != nil && !ok {
 		return fmt.Errorf("field host in ResolvedExposure: required")
 	}
+	if _, ok := raw["ingressClass"]; raw != nil && !ok {
+		return fmt.Errorf("field ingressClass in ResolvedExposure: required")
+	}
 	if _, ok := raw["listener"]; raw != nil && !ok {
 		return fmt.Errorf("field listener in ResolvedExposure: required")
 	}
@@ -2635,6 +3241,9 @@ func (j *ResolvedExposure) UnmarshalJSON(value []byte) error {
 	}
 	if utf8.RuneCountInString(string(plain.Host)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "host", 1)
+	}
+	if utf8.RuneCountInString(string(plain.IngressClass)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "ingressClass", 1)
 	}
 	if utf8.RuneCountInString(string(plain.Name)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
@@ -2907,6 +3516,71 @@ func (j *ResolvedHTTPProbe) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type ResolvedL4Port struct {
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port int `json:"port"`
+
+	// Protocol corresponds to the JSON schema field "protocol".
+	Protocol L4Protocol `json:"protocol"`
+
+	// Surface corresponds to the JSON schema field "surface".
+	Surface string `json:"surface"`
+
+	// TargetPort corresponds to the JSON schema field "targetPort".
+	TargetPort int `json:"targetPort"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedL4Port) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in ResolvedL4Port: required")
+	}
+	if _, ok := raw["port"]; raw != nil && !ok {
+		return fmt.Errorf("field port in ResolvedL4Port: required")
+	}
+	if _, ok := raw["protocol"]; raw != nil && !ok {
+		return fmt.Errorf("field protocol in ResolvedL4Port: required")
+	}
+	if _, ok := raw["surface"]; raw != nil && !ok {
+		return fmt.Errorf("field surface in ResolvedL4Port: required")
+	}
+	if _, ok := raw["targetPort"]; raw != nil && !ok {
+		return fmt.Errorf("field targetPort in ResolvedL4Port: required")
+	}
+	type Plain ResolvedL4Port
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	if 65535 < plain.Port {
+		return fmt.Errorf("field %s: must be <= %v", "port", 65535)
+	}
+	if 1 > plain.Port {
+		return fmt.Errorf("field %s: must be >= %v", "port", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Surface)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "surface", 1)
+	}
+	if 65535 < plain.TargetPort {
+		return fmt.Errorf("field %s: must be <= %v", "targetPort", 65535)
+	}
+	if 1 > plain.TargetPort {
+		return fmt.Errorf("field %s: must be >= %v", "targetPort", 1)
+	}
+	*j = ResolvedL4Port(plain)
+	return nil
+}
+
 type ResolvedLibraryMount struct {
 	// Access corresponds to the JSON schema field "access".
 	Access LibraryAccess `json:"access"`
@@ -3002,7 +3676,57 @@ func (j *ResolvedLibraryMount) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type ResolvedMesh struct {
+	// Dataplane corresponds to the JSON schema field "dataplane".
+	Dataplane string `json:"dataplane"`
+
+	// ProbeSource corresponds to the JSON schema field "probeSource".
+	ProbeSource string `json:"probeSource"`
+
+	// TunnelPort corresponds to the JSON schema field "tunnelPort".
+	TunnelPort int `json:"tunnelPort"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedMesh) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["dataplane"]; raw != nil && !ok {
+		return fmt.Errorf("field dataplane in ResolvedMesh: required")
+	}
+	if _, ok := raw["probeSource"]; raw != nil && !ok {
+		return fmt.Errorf("field probeSource in ResolvedMesh: required")
+	}
+	if _, ok := raw["tunnelPort"]; raw != nil && !ok {
+		return fmt.Errorf("field tunnelPort in ResolvedMesh: required")
+	}
+	type Plain ResolvedMesh
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if plain.Dataplane != "ambient" {
+		return fmt.Errorf("field %s: must be equal to %s", "dataplane", "ambient")
+	}
+	if utf8.RuneCountInString(string(plain.ProbeSource)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "probeSource", 1)
+	}
+	if 65535 < plain.TunnelPort {
+		return fmt.Errorf("field %s: must be <= %v", "tunnelPort", 65535)
+	}
+	if 1 > plain.TunnelPort {
+		return fmt.Errorf("field %s: must be >= %v", "tunnelPort", 1)
+	}
+	*j = ResolvedMesh(plain)
+	return nil
+}
+
 type ResolvedMigration struct {
+	// Consumes corresponds to the JSON schema field "consumes".
+	Consumes []string `json:"consumes"`
+
 	// Cpu corresponds to the JSON schema field "cpu".
 	Cpu string `json:"cpu"`
 
@@ -3033,6 +3757,9 @@ type ResolvedMigration struct {
 	// Runner corresponds to the JSON schema field "runner".
 	Runner string `json:"runner"`
 
+	// RunnerVersion corresponds to the JSON schema field "runnerVersion".
+	RunnerVersion *string `json:"runnerVersion,omitempty,omitzero"`
+
 	// Scratch corresponds to the JSON schema field "scratch".
 	Scratch string `json:"scratch"`
 
@@ -3048,6 +3775,9 @@ func (j *ResolvedMigration) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
+	}
+	if _, ok := raw["consumes"]; raw != nil && !ok {
+		return fmt.Errorf("field consumes in ResolvedMigration: required")
 	}
 	if _, ok := raw["cpu"]; raw != nil && !ok {
 		return fmt.Errorf("field cpu in ResolvedMigration: required")
@@ -3111,6 +3841,9 @@ func (j *ResolvedMigration) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Runner)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "runner", 1)
 	}
+	if plain.RunnerVersion != nil && utf8.RuneCountInString(string(*plain.RunnerVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "runnerVersion", 1)
+	}
 	if utf8.RuneCountInString(string(plain.Scratch)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "scratch", 1)
 	}
@@ -3126,6 +3859,59 @@ func (j *ResolvedMigration) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "uid", 0)
 	}
 	*j = ResolvedMigration(plain)
+	return nil
+}
+
+type ResolvedNodeExposure struct {
+	// Address corresponds to the JSON schema field "address".
+	Address string `json:"address"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind string `json:"kind"`
+
+	// Node corresponds to the JSON schema field "node".
+	Node string `json:"node"`
+
+	// Ports corresponds to the JSON schema field "ports".
+	Ports []ResolvedL4Port `json:"ports"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedNodeExposure) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["address"]; raw != nil && !ok {
+		return fmt.Errorf("field address in ResolvedNodeExposure: required")
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in ResolvedNodeExposure: required")
+	}
+	if _, ok := raw["node"]; raw != nil && !ok {
+		return fmt.Errorf("field node in ResolvedNodeExposure: required")
+	}
+	if _, ok := raw["ports"]; raw != nil && !ok {
+		return fmt.Errorf("field ports in ResolvedNodeExposure: required")
+	}
+	type Plain ResolvedNodeExposure
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Address)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "address", 1)
+	}
+	if plain.Kind != "node" {
+		return fmt.Errorf("field %s: must be equal to %s", "kind", "node")
+	}
+	if utf8.RuneCountInString(string(plain.Node)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
+	}
+	if plain.Ports != nil && len(plain.Ports) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "ports", 1)
+	}
+	*j = ResolvedNodeExposure(plain)
 	return nil
 }
 
@@ -3189,8 +3975,14 @@ type ResolvedPolicyJob struct {
 	// Image corresponds to the JSON schema field "image".
 	Image string `json:"image"`
 
+	// ImageVersion corresponds to the JSON schema field "imageVersion".
+	ImageVersion *string `json:"imageVersion,omitempty,omitzero"`
+
 	// Memory corresponds to the JSON schema field "memory".
 	Memory string `json:"memory"`
+
+	// Mesh corresponds to the JSON schema field "mesh".
+	Mesh *ResolvedMesh `json:"mesh,omitempty,omitzero"`
 
 	// Namespace corresponds to the JSON schema field "namespace".
 	Namespace string `json:"namespace"`
@@ -3273,6 +4065,9 @@ func (j *ResolvedPolicyJob) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Image)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "image", 1)
 	}
+	if plain.ImageVersion != nil && utf8.RuneCountInString(string(*plain.ImageVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "imageVersion", 1)
+	}
 	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
 	}
@@ -3289,6 +4084,77 @@ func (j *ResolvedPolicyJob) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "uid", 0)
 	}
 	*j = ResolvedPolicyJob(plain)
+	return nil
+}
+
+type ResolvedPoolExposure struct {
+	// Address corresponds to the JSON schema field "address".
+	Address string `json:"address"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind string `json:"kind"`
+
+	// Ports corresponds to the JSON schema field "ports".
+	Ports []ResolvedL4Port `json:"ports"`
+
+	// Range corresponds to the JSON schema field "range".
+	Range string `json:"range"`
+
+	// Service corresponds to the JSON schema field "service".
+	Service string `json:"service"`
+
+	// Site corresponds to the JSON schema field "site".
+	Site string `json:"site"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedPoolExposure) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["address"]; raw != nil && !ok {
+		return fmt.Errorf("field address in ResolvedPoolExposure: required")
+	}
+	if _, ok := raw["kind"]; raw != nil && !ok {
+		return fmt.Errorf("field kind in ResolvedPoolExposure: required")
+	}
+	if _, ok := raw["ports"]; raw != nil && !ok {
+		return fmt.Errorf("field ports in ResolvedPoolExposure: required")
+	}
+	if _, ok := raw["range"]; raw != nil && !ok {
+		return fmt.Errorf("field range in ResolvedPoolExposure: required")
+	}
+	if _, ok := raw["service"]; raw != nil && !ok {
+		return fmt.Errorf("field service in ResolvedPoolExposure: required")
+	}
+	if _, ok := raw["site"]; raw != nil && !ok {
+		return fmt.Errorf("field site in ResolvedPoolExposure: required")
+	}
+	type Plain ResolvedPoolExposure
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Address)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "address", 1)
+	}
+	if plain.Kind != "pool" {
+		return fmt.Errorf("field %s: must be equal to %s", "kind", "pool")
+	}
+	if plain.Ports != nil && len(plain.Ports) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "ports", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Range)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "range", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Service)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "service", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Site)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "site", 1)
+	}
+	*j = ResolvedPoolExposure(plain)
 	return nil
 }
 
@@ -3473,6 +4339,9 @@ type ResolvedProcess struct {
 	// Assets corresponds to the JSON schema field "assets".
 	Assets []ResolvedAsset `json:"assets,omitempty,omitzero"`
 
+	// Consumes corresponds to the JSON schema field "consumes".
+	Consumes []string `json:"consumes,omitempty,omitzero"`
+
 	// Cpu corresponds to the JSON schema field "cpu".
 	Cpu string `json:"cpu"`
 
@@ -3485,8 +4354,11 @@ type ResolvedProcess struct {
 	// Dependencies corresponds to the JSON schema field "dependencies".
 	Dependencies []ResolvedEdge `json:"dependencies,omitempty,omitzero"`
 
+	// EdgeProxy corresponds to the JSON schema field "edgeProxy".
+	EdgeProxy *ResolvedEdgeProxy `json:"edgeProxy,omitempty,omitzero"`
+
 	// Egress corresponds to the JSON schema field "egress".
-	Egress []EgressPeer `json:"egress,omitempty,omitzero"`
+	Egress []ResolvedProcessEgressElem `json:"egress,omitempty,omitzero"`
 
 	// Environment corresponds to the JSON schema field "environment".
 	Environment []EnvEntry `json:"environment,omitempty,omitzero"`
@@ -3509,11 +4381,17 @@ type ResolvedProcess struct {
 	// Image corresponds to the JSON schema field "image".
 	Image string `json:"image"`
 
+	// ImageVersion corresponds to the JSON schema field "imageVersion".
+	ImageVersion *string `json:"imageVersion,omitempty,omitzero"`
+
 	// Ingress corresponds to the JSON schema field "ingress".
 	Ingress []IngressPeer `json:"ingress,omitempty,omitzero"`
 
 	// InternetEgress corresponds to the JSON schema field "internetEgress".
 	InternetEgress *InternetEgress `json:"internetEgress,omitempty,omitzero"`
+
+	// L4Exposure corresponds to the JSON schema field "l4Exposure".
+	L4Exposure []ResolvedProcessL4ExposureElem `json:"l4Exposure,omitempty,omitzero"`
 
 	// Libraries corresponds to the JSON schema field "libraries".
 	Libraries []ResolvedLibraryMount `json:"libraries,omitempty,omitzero"`
@@ -3530,8 +4408,14 @@ type ResolvedProcess struct {
 	// Name corresponds to the JSON schema field "name".
 	Name string `json:"name"`
 
+	// Parked corresponds to the JSON schema field "parked".
+	Parked *bool `json:"parked,omitempty,omitzero"`
+
 	// Placement corresponds to the JSON schema field "placement".
 	Placement ResolvedPlacement `json:"placement"`
+
+	// PriorityClass corresponds to the JSON schema field "priorityClass".
+	PriorityClass *string `json:"priorityClass,omitempty,omitzero"`
 
 	// Readiness corresponds to the JSON schema field "readiness".
 	Readiness *ResolvedProbe `json:"readiness,omitempty,omitzero"`
@@ -3542,11 +4426,20 @@ type ResolvedProcess struct {
 	// Runtime corresponds to the JSON schema field "runtime".
 	Runtime Runtime `json:"runtime"`
 
+	// Schedule corresponds to the JSON schema field "schedule".
+	Schedule *string `json:"schedule,omitempty,omitzero"`
+
 	// Secrets corresponds to the JSON schema field "secrets".
 	Secrets []ResolvedProcessSecretsElem `json:"secrets,omitempty,omitzero"`
 
 	// Sidecars corresponds to the JSON schema field "sidecars".
 	Sidecars []ResolvedSidecar `json:"sidecars,omitempty,omitzero"`
+
+	// SpreadAcross corresponds to the JSON schema field "spreadAcross".
+	SpreadAcross *Spread `json:"spreadAcross,omitempty,omitzero"`
+
+	// StartDeadline corresponds to the JSON schema field "startDeadline".
+	StartDeadline *string `json:"startDeadline,omitempty,omitzero"`
 
 	// Startup corresponds to the JSON schema field "startup".
 	Startup *StartupProbe `json:"startup,omitempty,omitzero"`
@@ -3570,9 +4463,103 @@ type ResolvedProcess struct {
 	WritablePaths []WritablePath `json:"writablePaths,omitempty,omitzero"`
 }
 
+type ResolvedProcessEgressElem struct {
+	// Namespace corresponds to the JSON schema field "namespace".
+	Namespace *string `json:"namespace,omitempty,omitzero"`
+
+	// Port corresponds to the JSON schema field "port".
+	Port *int `json:"port,omitempty,omitzero"`
+
+	// Process corresponds to the JSON schema field "process".
+	Process *string `json:"process,omitempty,omitzero"`
+
+	// Rule corresponds to the JSON schema field "rule".
+	Rule EgressRule `json:"rule"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedProcessEgressElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	var resolvedProcessEgressElem_0 ResolvedProcessEgressElem_0
+	var resolvedProcessEgressElem_1 ResolvedProcessEgressElem_1
+	var errs []error
+	if err := resolvedProcessEgressElem_0.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if err := resolvedProcessEgressElem_1.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 2 {
+		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
+	}
+	type Plain ResolvedProcessEgressElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ResolvedProcessEgressElem(plain)
+	return nil
+}
+
+type ResolvedProcessL4ExposureElem struct {
+	// Address corresponds to the JSON schema field "address".
+	Address string `json:"address"`
+
+	// Kind corresponds to the JSON schema field "kind".
+	Kind string `json:"kind"`
+
+	// Node corresponds to the JSON schema field "node".
+	Node *string `json:"node,omitempty,omitzero"`
+
+	// Ports corresponds to the JSON schema field "ports".
+	Ports []ResolvedL4Port `json:"ports"`
+
+	// Range corresponds to the JSON schema field "range".
+	Range *string `json:"range,omitempty,omitzero"`
+
+	// Service corresponds to the JSON schema field "service".
+	Service *string `json:"service,omitempty,omitzero"`
+
+	// Site corresponds to the JSON schema field "site".
+	Site *string `json:"site,omitempty,omitzero"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedProcessL4ExposureElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	var resolvedProcessL4ExposureElem_0 ResolvedProcessL4ExposureElem_0
+	var resolvedProcessL4ExposureElem_1 ResolvedProcessL4ExposureElem_1
+	var errs []error
+	if err := resolvedProcessL4ExposureElem_0.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if err := resolvedProcessL4ExposureElem_1.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 2 {
+		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
+	}
+	type Plain ResolvedProcessL4ExposureElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = ResolvedProcessL4ExposureElem(plain)
+	return nil
+}
+
 type ResolvedProcessSecretsElem struct {
 	// Access corresponds to the JSON schema field "access".
 	Access *AccessTier `json:"access,omitempty,omitzero"`
+
+	// Client corresponds to the JSON schema field "client".
+	Client *string `json:"client,omitempty,omitzero"`
 
 	// Delivery corresponds to the JSON schema field "delivery".
 	Delivery ResolvedProcessSecretsElemDelivery `json:"delivery"`
@@ -3645,6 +4632,7 @@ func (j *ResolvedProcessSecretsElem) UnmarshalJSON(value []byte) error {
 	}
 	var resolvedProcessSecretsElem_0 ResolvedProcessSecretsElem_0
 	var resolvedProcessSecretsElem_1 ResolvedProcessSecretsElem_1
+	var resolvedProcessSecretsElem_2 ResolvedProcessSecretsElem_2
 	var errs []error
 	if err := resolvedProcessSecretsElem_0.UnmarshalJSON(value); err != nil {
 		errs = append(errs, err)
@@ -3652,7 +4640,10 @@ func (j *ResolvedProcessSecretsElem) UnmarshalJSON(value []byte) error {
 	if err := resolvedProcessSecretsElem_1.UnmarshalJSON(value); err != nil {
 		errs = append(errs, err)
 	}
-	if len(errs) == 2 {
+	if err := resolvedProcessSecretsElem_2.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 3 {
 		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
 	}
 	type Plain ResolvedProcessSecretsElem
@@ -3735,17 +4726,34 @@ func (j *ResolvedProcess) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Image)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "image", 1)
 	}
+	if plain.ImageVersion != nil && utf8.RuneCountInString(string(*plain.ImageVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "imageVersion", 1)
+	}
 	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
 	}
 	if utf8.RuneCountInString(string(plain.Name)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
 	}
+	if plain.Parked != nil && *plain.Parked != true {
+		return fmt.Errorf("field %s: must be equal to %t", "parked", true)
+	}
+	if plain.PriorityClass != nil && utf8.RuneCountInString(string(*plain.PriorityClass)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "priorityClass", 1)
+	}
 	if 9007199254740991 < plain.Replicas {
 		return fmt.Errorf("field %s: must be <= %v", "replicas", 9007199254740991)
 	}
-	if 1 > plain.Replicas {
-		return fmt.Errorf("field %s: must be >= %v", "replicas", 1)
+	if 0 > plain.Replicas {
+		return fmt.Errorf("field %s: must be >= %v", "replicas", 0)
+	}
+	if plain.Schedule != nil && utf8.RuneCountInString(string(*plain.Schedule)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "schedule", 1)
+	}
+	if plain.StartDeadline != nil {
+		if matched, _ := regexp.MatchString(`^\d+(ms|s|m|h)$`, string(*plain.StartDeadline)); !matched {
+			return fmt.Errorf("field %s pattern match: must match %s", "StartDeadline", `^\d+(ms|s|m|h)$`)
+		}
 	}
 	if 9007199254740991 < plain.Uid {
 		return fmt.Errorf("field %s: must be <= %v", "uid", 9007199254740991)
@@ -3757,7 +4765,153 @@ func (j *ResolvedProcess) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type ResolvedReceiver struct {
+	// Discord corresponds to the JSON schema field "discord".
+	Discord ResolvedReceiverDiscord `json:"discord"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+}
+
+type ResolvedReceiverDiscord struct {
+	// Key corresponds to the JSON schema field "key".
+	Key string `json:"key"`
+
+	// Secret corresponds to the JSON schema field "secret".
+	Secret string `json:"secret"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedReceiverDiscord) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["key"]; raw != nil && !ok {
+		return fmt.Errorf("field key in ResolvedReceiverDiscord: required")
+	}
+	if _, ok := raw["secret"]; raw != nil && !ok {
+		return fmt.Errorf("field secret in ResolvedReceiverDiscord: required")
+	}
+	type Plain ResolvedReceiverDiscord
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Key)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "key", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Secret)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "secret", 1)
+	}
+	*j = ResolvedReceiverDiscord(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedReceiver) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["discord"]; raw != nil && !ok {
+		return fmt.Errorf("field discord in ResolvedReceiver: required")
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in ResolvedReceiver: required")
+	}
+	type Plain ResolvedReceiver
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	*j = ResolvedReceiver(plain)
+	return nil
+}
+
+type ResolvedResolver struct {
+	// DnsProvider corresponds to the JSON schema field "dnsProvider".
+	DnsProvider string `json:"dnsProvider"`
+
+	// Email corresponds to the JSON schema field "email".
+	Email string `json:"email"`
+
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+
+	// Storage corresponds to the JSON schema field "storage".
+	Storage string `json:"storage"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedResolver) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["dnsProvider"]; raw != nil && !ok {
+		return fmt.Errorf("field dnsProvider in ResolvedResolver: required")
+	}
+	if _, ok := raw["email"]; raw != nil && !ok {
+		return fmt.Errorf("field email in ResolvedResolver: required")
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in ResolvedResolver: required")
+	}
+	if _, ok := raw["storage"]; raw != nil && !ok {
+		return fmt.Errorf("field storage in ResolvedResolver: required")
+	}
+	type Plain ResolvedResolver
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.DnsProvider)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "dnsProvider", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Email)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "email", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Storage)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "storage", 1)
+	}
+	*j = ResolvedResolver(plain)
+	return nil
+}
+
 type ResolvedRoute struct {
+	// Audience corresponds to the JSON schema field "audience".
+	Audience Audience `json:"audience"`
+
+	// Gate corresponds to the JSON schema field "gate".
+	Gate *GateAddress `json:"gate,omitempty,omitzero"`
+
+	// Match corresponds to the JSON schema field "match".
+	Match Match `json:"match"`
+
+	// Middleware corresponds to the JSON schema field "middleware".
+	Middleware []MiddlewareStep `json:"middleware,omitempty,omitzero"`
+
+	// Path corresponds to the JSON schema field "path".
+	Path string `json:"path"`
+
+	// Precedence corresponds to the JSON schema field "precedence".
+	Precedence int `json:"precedence"`
+
+	// Process corresponds to the JSON schema field "process".
+	Process *string `json:"process,omitempty,omitzero"`
+
+	// Surface corresponds to the JSON schema field "surface".
+	Surface *string `json:"surface,omitempty,omitzero"`
+}
+
+type ResolvedRoute_0 struct {
 	// Audience corresponds to the JSON schema field "audience".
 	Audience Audience `json:"audience"`
 
@@ -3781,30 +4935,30 @@ type ResolvedRoute struct {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *ResolvedRoute) UnmarshalJSON(value []byte) error {
+func (j *ResolvedRoute_0) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(value, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["audience"]; raw != nil && !ok {
-		return fmt.Errorf("field audience in ResolvedRoute: required")
+		return fmt.Errorf("field audience in ResolvedRoute_0: required")
 	}
 	if _, ok := raw["match"]; raw != nil && !ok {
-		return fmt.Errorf("field match in ResolvedRoute: required")
+		return fmt.Errorf("field match in ResolvedRoute_0: required")
 	}
 	if _, ok := raw["path"]; raw != nil && !ok {
-		return fmt.Errorf("field path in ResolvedRoute: required")
+		return fmt.Errorf("field path in ResolvedRoute_0: required")
 	}
 	if _, ok := raw["precedence"]; raw != nil && !ok {
-		return fmt.Errorf("field precedence in ResolvedRoute: required")
+		return fmt.Errorf("field precedence in ResolvedRoute_0: required")
 	}
 	if _, ok := raw["process"]; raw != nil && !ok {
-		return fmt.Errorf("field process in ResolvedRoute: required")
+		return fmt.Errorf("field process in ResolvedRoute_0: required")
 	}
 	if _, ok := raw["surface"]; raw != nil && !ok {
-		return fmt.Errorf("field surface in ResolvedRoute: required")
+		return fmt.Errorf("field surface in ResolvedRoute_0: required")
 	}
-	type Plain ResolvedRoute
+	type Plain ResolvedRoute_0
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
@@ -3824,6 +4978,92 @@ func (j *ResolvedRoute) UnmarshalJSON(value []byte) error {
 	if utf8.RuneCountInString(string(plain.Surface)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "surface", 1)
 	}
+	*j = ResolvedRoute_0(plain)
+	return nil
+}
+
+type ResolvedRoute_1 struct {
+	// Audience corresponds to the JSON schema field "audience".
+	Audience Audience `json:"audience"`
+
+	// Gate corresponds to the JSON schema field "gate".
+	Gate GateAddress `json:"gate"`
+
+	// Match corresponds to the JSON schema field "match".
+	Match Match `json:"match"`
+
+	// Middleware corresponds to the JSON schema field "middleware".
+	Middleware []MiddlewareStep `json:"middleware,omitempty,omitzero"`
+
+	// Path corresponds to the JSON schema field "path".
+	Path string `json:"path"`
+
+	// Precedence corresponds to the JSON schema field "precedence".
+	Precedence int `json:"precedence"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedRoute_1) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["audience"]; raw != nil && !ok {
+		return fmt.Errorf("field audience in ResolvedRoute_1: required")
+	}
+	if _, ok := raw["gate"]; raw != nil && !ok {
+		return fmt.Errorf("field gate in ResolvedRoute_1: required")
+	}
+	if _, ok := raw["match"]; raw != nil && !ok {
+		return fmt.Errorf("field match in ResolvedRoute_1: required")
+	}
+	if _, ok := raw["path"]; raw != nil && !ok {
+		return fmt.Errorf("field path in ResolvedRoute_1: required")
+	}
+	if _, ok := raw["precedence"]; raw != nil && !ok {
+		return fmt.Errorf("field precedence in ResolvedRoute_1: required")
+	}
+	type Plain ResolvedRoute_1
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Path)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "path", 1)
+	}
+	if 9007199254740991 < plain.Precedence {
+		return fmt.Errorf("field %s: must be <= %v", "precedence", 9007199254740991)
+	}
+	if 1 > plain.Precedence {
+		return fmt.Errorf("field %s: must be >= %v", "precedence", 1)
+	}
+	*j = ResolvedRoute_1(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedRoute) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	var resolvedRoute_0 ResolvedRoute_0
+	var resolvedRoute_1 ResolvedRoute_1
+	var errs []error
+	if err := resolvedRoute_0.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if err := resolvedRoute_1.UnmarshalJSON(value); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) == 2 {
+		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
+	}
+	type Plain ResolvedRoute
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
 	*j = ResolvedRoute(plain)
 	return nil
 }
@@ -3831,6 +5071,9 @@ func (j *ResolvedRoute) UnmarshalJSON(value []byte) error {
 type ResolvedScrape struct {
 	// Interval corresponds to the JSON schema field "interval".
 	Interval string `json:"interval"`
+
+	// Labels corresponds to the JSON schema field "labels".
+	Labels ResolvedScrapeLabels `json:"labels,omitempty,omitzero"`
 
 	// Path corresponds to the JSON schema field "path".
 	Path string `json:"path"`
@@ -3844,6 +5087,8 @@ type ResolvedScrape struct {
 	// Timeout corresponds to the JSON schema field "timeout".
 	Timeout string `json:"timeout"`
 }
+
+type ResolvedScrapeLabels map[string]string
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *ResolvedScrape) UnmarshalJSON(value []byte) error {
@@ -3890,12 +5135,59 @@ func (j *ResolvedScrape) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type ResolvedSeverityRoute struct {
+	// Receiver corresponds to the JSON schema field "receiver".
+	Receiver string `json:"receiver"`
+
+	// Repeat corresponds to the JSON schema field "repeat".
+	Repeat string `json:"repeat"`
+
+	// Severity corresponds to the JSON schema field "severity".
+	Severity string `json:"severity"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedSeverityRoute) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["receiver"]; raw != nil && !ok {
+		return fmt.Errorf("field receiver in ResolvedSeverityRoute: required")
+	}
+	if _, ok := raw["repeat"]; raw != nil && !ok {
+		return fmt.Errorf("field repeat in ResolvedSeverityRoute: required")
+	}
+	if _, ok := raw["severity"]; raw != nil && !ok {
+		return fmt.Errorf("field severity in ResolvedSeverityRoute: required")
+	}
+	type Plain ResolvedSeverityRoute
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Receiver)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "receiver", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Repeat)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "repeat", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Severity)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "severity", 1)
+	}
+	*j = ResolvedSeverityRoute(plain)
+	return nil
+}
+
 type ResolvedSidecar struct {
 	// Cpu corresponds to the JSON schema field "cpu".
 	Cpu string `json:"cpu"`
 
 	// Image corresponds to the JSON schema field "image".
 	Image string `json:"image"`
+
+	// ImageVersion corresponds to the JSON schema field "imageVersion".
+	ImageVersion *string `json:"imageVersion,omitempty,omitzero"`
 
 	// Memory corresponds to the JSON schema field "memory".
 	Memory string `json:"memory"`
@@ -3932,6 +5224,9 @@ func (j *ResolvedSidecar) UnmarshalJSON(value []byte) error {
 	}
 	if utf8.RuneCountInString(string(plain.Image)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "image", 1)
+	}
+	if plain.ImageVersion != nil && utf8.RuneCountInString(string(*plain.ImageVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "imageVersion", 1)
 	}
 	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
@@ -4010,6 +5305,38 @@ func (j *ResolvedTCPProbe) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type ResolvedTierDns struct {
+	// Proxied corresponds to the JSON schema field "proxied".
+	Proxied bool `json:"proxied"`
+
+	// Target corresponds to the JSON schema field "target".
+	Target string `json:"target"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ResolvedTierDns) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["proxied"]; raw != nil && !ok {
+		return fmt.Errorf("field proxied in ResolvedTierDns: required")
+	}
+	if _, ok := raw["target"]; raw != nil && !ok {
+		return fmt.Errorf("field target in ResolvedTierDns: required")
+	}
+	type Plain ResolvedTierDns
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Target)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "target", 1)
+	}
+	*j = ResolvedTierDns(plain)
+	return nil
+}
+
 type ResolvedVolume struct {
 	// Backup corresponds to the JSON schema field "backup".
 	Backup *BackupPlan `json:"backup,omitempty,omitzero"`
@@ -4078,6 +5405,9 @@ type ResolvedVpn struct {
 
 	// Image corresponds to the JSON schema field "image".
 	Image string `json:"image"`
+
+	// ImageVersion corresponds to the JSON schema field "imageVersion".
+	ImageVersion *string `json:"imageVersion,omitempty,omitzero"`
 
 	// Memory corresponds to the JSON schema field "memory".
 	Memory string `json:"memory"`
@@ -4152,6 +5482,9 @@ func (j *ResolvedVpn) UnmarshalJSON(value []byte) error {
 	}
 	if utf8.RuneCountInString(string(plain.Image)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "image", 1)
+	}
+	if plain.ImageVersion != nil && utf8.RuneCountInString(string(*plain.ImageVersion)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "imageVersion", 1)
 	}
 	if utf8.RuneCountInString(string(plain.Memory)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "memory", 1)
@@ -4228,6 +5561,66 @@ func (j *SecretReference) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s length: must be >= %d", "path", 1)
 	}
 	*j = SecretReference(plain)
+	return nil
+}
+
+type SignInMode string
+
+const SignInModeGated SignInMode = "gated"
+const SignInModeNative SignInMode = "native"
+const SignInModeToken SignInMode = "token"
+
+var enumValues_SignInMode = []interface{}{
+	"native",
+	"gated",
+	"token",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SignInMode) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_SignInMode {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SignInMode, v)
+	}
+	*j = SignInMode(v)
+	return nil
+}
+
+type Spread string
+
+const SpreadNode Spread = "node"
+
+var enumValues_Spread = []interface{}{
+	"node",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Spread) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_Spread {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_Spread, v)
+	}
+	*j = Spread(v)
 	return nil
 }
 
@@ -4445,40 +5838,7 @@ type TierProxy struct {
 	Namespace string `json:"namespace"`
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *TierProxy) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["application"]; raw != nil && !ok {
-		return fmt.Errorf("field application in TierProxy: required")
-	}
-	if _, ok := raw["namespace"]; raw != nil && !ok {
-		return fmt.Errorf("field namespace in TierProxy: required")
-	}
-	type Plain TierProxy
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.Application)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "application", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
-	}
-	*j = TierProxy(plain)
-	return nil
-}
-
-type WritablePath struct {
-	// Path corresponds to the JSON schema field "path".
-	Path string `json:"path"`
-
-	// Size corresponds to the JSON schema field "size".
-	Size string `json:"size"`
-}
+type ResolvedProcessL4ExposureElem_0 = ResolvedPoolExposure
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *WritablePath) UnmarshalJSON(value []byte) error {
@@ -4507,9 +5867,52 @@ func (j *WritablePath) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type ResolvedProcessSecretsElem_1 = ResolvedEngineGrant
+type ResolvedProcessEgressElem_0 = EgressPeer
+
+type WritablePath struct {
+	// Path corresponds to the JSON schema field "path".
+	Path string `json:"path"`
+
+	// Size corresponds to the JSON schema field "size".
+	Size string `json:"size"`
+}
+
+type ResolvedProcessEgressElem_1 = GateMembersPeer
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *TierProxy) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["application"]; raw != nil && !ok {
+		return fmt.Errorf("field application in TierProxy: required")
+	}
+	if _, ok := raw["namespace"]; raw != nil && !ok {
+		return fmt.Errorf("field namespace in TierProxy: required")
+	}
+	type Plain TierProxy
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Application)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "application", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
+	}
+	*j = TierProxy(plain)
+	return nil
+}
+
+type ResolvedProcessL4ExposureElem_1 = ResolvedNodeExposure
+
+type ResolvedProcessSecretsElem_2 = ResolvedClientGrant
 
 type ResolvedProcessSecretsElem_0 = ResolvedGrant
+
+type ResolvedProcessSecretsElem_1 = ResolvedEngineGrant
 
 type GateMemberReadiness_0 = ResolvedHTTPProbe
 

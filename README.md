@@ -82,7 +82,7 @@ and the Application revision, and the gate reads the rest from the cluster.
 |---------|------|----------|
 | `confirm-rollout` | `POST /may-start` | every step of the release has completed: its migration and its prepare Processes, each a Job named for the revision. An Application that has never run one starts at once |
 | `rollout` | `POST /checks` | the member's new copy has a pod, every one is ready, and none has restarted; and the gate's own requests to it stay under the platform's error rate and p95 latency |
-| `confirm-promotion` | `POST /may-promote` | every member of the Application has passed its analysis for this revision or did not change in it: the barrier |
+| `confirm-promotion` | `POST /may-promote` | every member of the Application has passed its analysis for this revision or did not change in it: the barrier; and, for a native Client, the member that serves its protected path refuses it to a stranger |
 
 Flagger reads a 2xx as yes and anything else as no, so the status is the answer: `200` yes, `409`
 not yet, with what it waits on, `400` a payload that asks nothing, `403` a caller that is not
@@ -153,6 +153,17 @@ Flagger, `503` a question the gate could not answer. Flagger records a refusal's
     path is held to its pods alone.
   - The metric checks a Runtime Profile derives (`error-rate`, `latency` on a member) do not
     change this: every member is held to the same requests. Metric-based checks come later.
+- **A native Client proves that it signs people in** (`E_CLIENT_OPEN`,
+  JorisJonkers-dev/delivery#86). Where the inputs carry `protectedPath`, the gate requests it
+  once more before it lets the barrier open: from `protectedBy`, the member the longest Route of
+  the Client's exposure takes the path to, at that member's Canary service, with no credentials
+  and no redirect followed.
+  - A 2xx holds the release: `E_CLIENT_OPEN: <process> serves <path> to anyone`.
+  - Any other answer passes, a `401` or a redirect to sign in included. No answer holds it.
+  - A `protectedBy` member that did not change in the release is not asked: its image was asked
+    when it last did.
+  - Inputs that name a path but no member, a member that is not one, or a path that is not URL
+    path segments are a question the gate cannot answer.
 - **It starts no prepare Process yet.** deploy-kit renders none, so there is no Job to start.
 
 ### Between questions
