@@ -198,6 +198,10 @@
           "type": "string",
           "minLength": 1
         },
+        "departing": {
+          "type": "boolean",
+          "const": true
+        },
         "reconcileUnit": {
           "type": "string",
           "minLength": 1
@@ -1305,6 +1309,10 @@
           "type": "string",
           "minLength": 1
         },
+        "instance": {
+          "type": "string",
+          "minLength": 1
+        },
         "lifecycle": {
           "$ref": "#/$defs/Lifecycle"
         },
@@ -1505,6 +1513,9 @@
           "items": {
             "$ref": "#/$defs/ResolvedSpawn"
           }
+        },
+        "move": {
+          "$ref": "#/$defs/ResolvedMove"
         },
         "ingress": {
           "type": "array",
@@ -2858,6 +2869,208 @@
         "egress"
       ],
       "additionalProperties": false
+    },
+    "ResolvedMove": {
+      "type": "object",
+      "properties": {
+        "triggers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MoveTrigger"
+          }
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "instance": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "node": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "instance",
+            "version",
+            "namespace",
+            "node"
+          ],
+          "additionalProperties": false
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "instance": {
+              "type": "string",
+              "minLength": 1
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "image",
+            "version",
+            "namespace",
+            "nodes"
+          ],
+          "additionalProperties": false
+        },
+        "method": {
+          "type": "object",
+          "properties": {
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "imageVersion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uid": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "gid": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "credential": {
+              "$ref": "#/$defs/ResolvedGrant"
+            },
+            "egress": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EgressPeer"
+              }
+            }
+          },
+          "required": [
+            "image",
+            "uid",
+            "gid",
+            "port",
+            "credential",
+            "egress"
+          ],
+          "additionalProperties": false
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flips": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reversible": {
+          "type": "boolean"
+        },
+        "bounds": {
+          "type": "object",
+          "properties": {
+            "timeout": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retention": {
+              "type": "string",
+              "minLength": 1
+            },
+            "memory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cpu": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "timeout",
+            "retention",
+            "memory",
+            "cpu"
+          ],
+          "additionalProperties": false
+        },
+        "server": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DestinationRange"
+          }
+        },
+        "phase": {
+          "$ref": "#/$defs/MoveStep"
+        }
+      },
+      "required": [
+        "triggers",
+        "source",
+        "target",
+        "identity",
+        "flips",
+        "reversible",
+        "bounds"
+      ],
+      "additionalProperties": false
+    },
+    "MoveTrigger": {
+      "type": "string",
+      "enum": [
+        "version",
+        "namespace",
+        "binding"
+      ]
+    },
+    "MoveStep": {
+      "type": "string",
+      "enum": [
+        "sync",
+        "lag",
+        "fence",
+        "unfence",
+        "reverse",
+        "retire"
+      ]
     },
     "IngressPeer": {
       "anyOf": [

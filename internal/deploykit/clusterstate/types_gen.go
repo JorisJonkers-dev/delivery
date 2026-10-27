@@ -80,6 +80,9 @@ type SnapshotInstancesElem struct {
 	// Instance corresponds to the JSON schema field "instance".
 	Instance string `json:"instance"`
 
+	// Name corresponds to the JSON schema field "name".
+	Name *string `json:"name,omitempty,omitzero"`
+
 	// Namespace corresponds to the JSON schema field "namespace".
 	Namespace string `json:"namespace"`
 
@@ -88,6 +91,9 @@ type SnapshotInstancesElem struct {
 
 	// Phase corresponds to the JSON schema field "phase".
 	Phase *SnapshotInstancesElemPhase `json:"phase,omitempty,omitzero"`
+
+	// Target corresponds to the JSON schema field "target".
+	Target *SnapshotInstancesElemTarget `json:"target,omitempty,omitzero"`
 
 	// Version corresponds to the JSON schema field "version".
 	Version string `json:"version"`
@@ -131,6 +137,56 @@ func (j *SnapshotInstancesElemPhase) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
+type SnapshotInstancesElemTarget struct {
+	// Name corresponds to the JSON schema field "name".
+	Name string `json:"name"`
+
+	// Namespace corresponds to the JSON schema field "namespace".
+	Namespace string `json:"namespace"`
+
+	// Node corresponds to the JSON schema field "node".
+	Node *string `json:"node,omitempty,omitzero"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SnapshotInstancesElemTarget) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["name"]; raw != nil && !ok {
+		return fmt.Errorf("field name in SnapshotInstancesElemTarget: required")
+	}
+	if _, ok := raw["namespace"]; raw != nil && !ok {
+		return fmt.Errorf("field namespace in SnapshotInstancesElemTarget: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in SnapshotInstancesElemTarget: required")
+	}
+	type Plain SnapshotInstancesElemTarget
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
+	}
+	if plain.Node != nil && utf8.RuneCountInString(string(*plain.Node)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
+	}
+	if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, string(plain.Version)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "Version", `^\d+\.\d+\.\d+$`)
+	}
+	*j = SnapshotInstancesElemTarget(plain)
+	return nil
+}
+
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *SnapshotInstancesElem) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
@@ -162,6 +218,9 @@ func (j *SnapshotInstancesElem) UnmarshalJSON(value []byte) error {
 	}
 	if utf8.RuneCountInString(string(plain.Instance)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "instance", 1)
+	}
+	if plain.Name != nil && utf8.RuneCountInString(string(*plain.Name)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
 	}
 	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
 		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
