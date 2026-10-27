@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.0...v0.15.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **gate:** read the new copy as the newest ReplicaSet's pods that are not being deleted ([#99](https://github.com/JorisJonkers-dev/delivery/issues/99)) ([2e3f713](https://github.com/JorisJonkers-dev/delivery/commit/2e3f713964fed1c998a97bed573a01d65167edc7))
+
 ## [0.15.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.14.0...v0.15.0) (2026-10-27)
 
 
