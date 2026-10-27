@@ -51,8 +51,8 @@ func Read(document []byte) (string, Facts, error) {
 	for _, p := range snapshot.Placements {
 		facts.Placements = append(facts.Placements, Placement{Process: p.Process, Node: p.Node})
 	}
-	// A Rollback takes no backup (deploy-kit#557), so a `backups` list an older Collector wrote is
-	// read past, and the next changed capture drops it.
+	// A `backups` list an older Collector wrote is no field of the schema since deploy-kit#574, so
+	// it is read past, and the next changed capture drops it.
 	return snapshot.Cluster, facts, nil
 }
 
