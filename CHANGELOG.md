@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.14.0...v0.15.0) (2026-10-27)
+
+
+### Features
+
+* **backup:** copy a SQLite database consistently ([#90](https://github.com/JorisJonkers-dev/delivery/issues/90)) ([954ae3a](https://github.com/JorisJonkers-dev/delivery/commit/954ae3a26d1f78e438e17140fb7345061a887e1f))
+* **backup:** copy each generation off the cluster, encrypted and verified ([#92](https://github.com/JorisJonkers-dev/delivery/issues/92)) ([763b377](https://github.com/JorisJonkers-dev/delivery/commit/763b377075f05b91ec24c1f9aecf9639d464fa19))
+* **garage-catalog:** apply the bucket catalog the render hands it ([#94](https://github.com/JorisJonkers-dev/delivery/issues/94)) ([83aa999](https://github.com/JorisJonkers-dev/delivery/commit/83aa999a19f446606cb7064bc42754b6b1fd2119))
+* **gate:** serve each round of tending as metrics, to the metrics stack alone ([#93](https://github.com/JorisJonkers-dev/delivery/issues/93)) ([37eeb79](https://github.com/JorisJonkers-dev/delivery/commit/37eeb79c8bed103f0004247ad5985102ebaa5750))
+* move onto deploy-kit 1.0's schemas, scrape the Release Gate, and narrow its record writes ([#97](https://github.com/JorisJonkers-dev/delivery/issues/97)) ([a4cc23c](https://github.com/JorisJonkers-dev/delivery/commit/a4cc23ca88a2a7dc0b8942a0189e5714c96bed55))
+
+
+### Bug Fixes
+
+* **collector:** stop capturing a Rollback's backup Jobs ([#96](https://github.com/JorisJonkers-dev/delivery/issues/96)) ([563fc7f](https://github.com/JorisJonkers-dev/delivery/commit/563fc7fea03fd67d08792e5c13ab35582ba7e009))
+
 ## [0.14.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.13.1...v0.14.0) (2026-10-26)
 
 
