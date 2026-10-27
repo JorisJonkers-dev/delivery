@@ -370,8 +370,7 @@ prefix, will need the glob this job refuses today.
 
 The Collector captures when it starts and then once every `INTERVAL`, and keeps running: Project
 Intent has no schedule, so it keeps its own. Each capture lists PersistentVolumes,
-PersistentVolumeClaims, the pods deploy-kit renders and the Jobs it renders for a Rollback's
-backup, and compares what they say with
+PersistentVolumeClaims and the pods deploy-kit renders, and compares what they say with
 `cluster-state.yml` in the Estate repository
 ([deploy-kit `spec/v1/20-resolved-deployment.md`](https://github.com/JorisJonkers-dev/deploy-kit/blob/main/spec/v1/20-resolved-deployment.md#the-collector)):
 
@@ -379,9 +378,9 @@ backup, and compares what they say with
 |---|---|
 | a binding, `{claim, node}` | a bound claim's name, and the one node its volume's node affinity names under `kubernetes.io/hostname`. A volume any node can mount binds its claim to nothing |
 | a placement, `{process, node}` | a pod labelled `app.kubernetes.io/managed-by: deploy-kit`: its `app.kubernetes.io/name` and the node it is scheduled to. A pod that has finished is not a placement |
-| a backup, `{request, project, job, outcome, finishedAt}` | a Job labelled `estate.jorisjonkers.dev/rollback-backup` and `app.kubernetes.io/managed-by: deploy-kit`, in a namespace ending `-system`: the request label's value, its namespace without `-system`, its name, and its `Complete` or `Failed` condition and when that became true. A Job still running is not listed, and `backups` is written only when one is |
 
-Facts are ordered and free of duplicates. When they equal the committed snapshot's, the capture
+A Rollback takes no backup (deploy-kit#557), so the Collector writes no `backups` list, and reads
+past one an older Collector wrote. Facts are ordered and free of duplicates. When they equal the committed snapshot's, the capture
 commits nothing, and `capturedAt` stays what it was. When they differ, it writes the file
 once, through the Collector's GitHub App, replacing exactly the blob it read. A snapshot that
 names another cluster, or that deploy-kit's schema would refuse, is never overwritten.
@@ -402,7 +401,7 @@ twice the interval and 503 after, and it is the Collector's liveness probe, so o
 succeeding is restarted and shows as restarts.
 
 The Collector is an Application of `deploy/delivery.project.yml`. Its `api` block declares the
-four kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
+three kinds it lists, cluster-wide, which deploy-kit renders into its ClusterRole once the
 Platform document admits it; its GitHub App arrives as variables, from a grant on
 `secret/data/delivery-system/collector`.
 

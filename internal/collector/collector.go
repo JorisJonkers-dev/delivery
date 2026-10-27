@@ -6,16 +6,14 @@ import (
 	"log/slog"
 	"time"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
-// Cluster is what the Collector reads: four lists, and nothing else of the cluster.
+// Cluster is what the Collector reads: three lists, and nothing else of the cluster.
 type Cluster interface {
 	Volumes(ctx context.Context) ([]corev1.PersistentVolume, error)
 	Claims(ctx context.Context) ([]corev1.PersistentVolumeClaim, error)
 	ManagedPods(ctx context.Context) ([]corev1.Pod, error)
-	BackupJobs(ctx context.Context) ([]batchv1.Job, error)
 }
 
 // Repository is the one file the Collector writes, in the Estate repository.
@@ -58,7 +56,7 @@ func (c Collector) Run(ctx context.Context) (bool, error) {
 	}
 	if facts.Equal(committed) {
 		c.Log.InfoContext(ctx, "the cluster says what the snapshot says; nothing to commit",
-			"bindings", len(facts.Bindings), "placements", len(facts.Placements), "backups", len(facts.Backups))
+			"bindings", len(facts.Bindings), "placements", len(facts.Placements))
 		return false, nil
 	}
 
@@ -67,7 +65,7 @@ func (c Collector) Run(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("commit the snapshot: %w", err)
 	}
 	c.Log.InfoContext(ctx, "committed a changed snapshot",
-		"bindings", len(facts.Bindings), "placements", len(facts.Placements), "backups", len(facts.Backups))
+		"bindings", len(facts.Bindings), "placements", len(facts.Placements))
 	return true, nil
 }
 
@@ -84,11 +82,5 @@ func (c Collector) capture(ctx context.Context) (Facts, error) {
 	if err != nil {
 		return Facts{}, fmt.Errorf("list pods: %w", err)
 	}
-	jobs, err := c.Cluster.BackupJobs(ctx)
-	if err != nil {
-		return Facts{}, fmt.Errorf("list Jobs: %w", err)
-	}
-	facts := Capture(volumes, claims, pods)
-	facts.Backups = CaptureBackups(jobs)
-	return facts, nil
+	return Capture(volumes, claims, pods), nil
 }
