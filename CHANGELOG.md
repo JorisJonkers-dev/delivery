@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.2...v0.16.0) (2026-10-27)
+
+
+### Features
+
+* **gate:** answer Flagger's rollback webhook once a release can no longer pass ([#103](https://github.com/JorisJonkers-dev/delivery/issues/103)) ([a48bb0f](https://github.com/JorisJonkers-dev/delivery/commit/a48bb0fb72ca4ab7bf849339bc7ca3659b9bd773))
+
 ## [0.15.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.1...v0.15.2) (2026-10-27)
 
 
