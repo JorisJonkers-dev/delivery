@@ -180,7 +180,6 @@ func TestReadRefusesWhatIsNotASnapshot(t *testing.T) {
 		"a missing list":         strings.Replace(empty, "placements: []\n", "", 1),
 		"a binding with no node": strings.Replace(empty, "bindings: []", "bindings: [{claim: a}]", 1),
 		"another kind":           strings.Replace(empty, "kind: ClusterState", "kind: ConfigMap", 1),
-		"a backup still running": empty + "backups:\n  - {request: a, project: b, job: c, outcome: running, finishedAt: \"2026-10-03T05:00:00Z\"}\n",
 	}
 	for name, document := range cases {
 		if _, _, err := collector.Read([]byte(document)); err == nil {

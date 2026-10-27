@@ -72,7 +72,6 @@
         ],
         "applications": [
           {
-            "alertClass": "business-hours",
             "exposure": [
               {
                 "certificates": "acme",
@@ -282,7 +281,6 @@
           "op": "replace",
           "path": "/applications",
           "value": {
-            "alertClass": "business-hours",
             "exposure": [
               {
                 "certificates": "acme",

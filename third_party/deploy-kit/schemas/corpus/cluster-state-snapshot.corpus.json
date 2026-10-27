@@ -7,6 +7,71 @@
       "file": "examples/platform/cluster-state.yml"
     },
     {
+      "name": "a snapshot recording an engine Process's active Instance mid-Move",
+      "verdict": "accept",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/instances",
+          "value": [
+            {
+              "application": "platform-postgres",
+              "instance": "postgres",
+              "version": "17.2.0",
+              "namespace": "data-system",
+              "node": "enschede-t1000-1",
+              "phase": "retire",
+              "flippedAt": "2026-10-26T12:00:00Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an active Instance at a phase that is no step of a Move",
+      "verdict": "refuse",
+      "breaks": "enum",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/instances",
+          "value": [
+            {
+              "application": "platform-postgres",
+              "instance": "postgres",
+              "version": "17.2.0",
+              "namespace": "data-system",
+              "node": "enschede-t1000-1",
+              "phase": "halfway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an active Instance whose version is not major.minor.patch",
+      "verdict": "refuse",
+      "breaks": "rule",
+      "file": "examples/platform/cluster-state.yml",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/instances",
+          "value": [
+            {
+              "application": "platform-postgres",
+              "instance": "postgres",
+              "version": "17",
+              "namespace": "data-system",
+              "node": "enschede-t1000-1"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "a field the model does not have",
       "verdict": "refuse",
       "breaks": "unknown-field",
