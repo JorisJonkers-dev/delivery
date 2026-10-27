@@ -12,11 +12,12 @@ import (
 	"net/netip"
 )
 
-// The paths a Canary's three webhooks name, under the gate's endpoint.
+// The paths a Canary's four webhooks name, under the gate's endpoint.
 const (
 	PathMayStart   = "/may-start"
 	PathChecks     = "/checks"
 	PathMayPromote = "/may-promote"
+	PathRollBack   = "/rollback"
 )
 
 // maxBody bounds a webhook's body: Flagger's payload is a few hundred bytes.
@@ -80,11 +81,12 @@ func from(r *http.Request, whose string, pods func(context.Context) ([]string, e
 	return false, nil
 }
 
-// Routes mounts the three webhooks, and GET /releases. Flagger reads a 2xx as yes and anything else as no, so the
+// Routes mounts the four webhooks, and GET /releases. Flagger reads a 2xx as yes and anything else as no, so the
 // status is the answer: 200 is yes, 409 is "not yet", 400 is a payload that asks nothing, 403
 // is a caller that is not Flagger, and 503 is a question the gate could not answer, which is
 // also no. Flagger records a refusal's
-// body on the Canary, so a 409 says what the release waits on.
+// body on the Canary, so a 409 says what the release waits on. For `rollback` a yes rolls the
+// member back, so every no there, the 503 among them, leaves the release where it is.
 func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
 	mux.HandleFunc("GET "+PathMetrics, func(w http.ResponseWriter, r *http.Request) {
 		g.metricsRoute(w, r, func(err error) {
@@ -100,6 +102,7 @@ func (g *Gate) Routes(mux *http.ServeMux, logger *slog.Logger) {
 		PathMayStart:   g.MayStart,
 		PathChecks:     g.Checks,
 		PathMayPromote: g.MayPromote,
+		PathRollBack:   g.RollBack,
 	} {
 		mux.HandleFunc("POST "+path, func(w http.ResponseWriter, r *http.Request) {
 			status, why := http.StatusOK, ""

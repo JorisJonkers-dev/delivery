@@ -1,6 +1,6 @@
 // Package gate is the Release Gate's decisions: whether a member's new version may start, whether
-// it passes an analysis iteration, and whether it may be promoted
-// (deploy-kit spec/v1/55-delivery.md#the-release-gate).
+// it passes an analysis iteration, whether it may be promoted, and whether its new copy must be
+// rolled back (deploy-kit spec/v1/55-delivery.md#the-release-gate).
 //
 // Every answer is read from the cluster at the moment it is asked: the Application's
 // release-gate inputs, its release Jobs, its members' Canaries and Deployments, and the pods of
@@ -167,7 +167,7 @@ type SyncObject struct {
 	Version string
 }
 
-// Gate answers Flagger's three questions.
+// Gate answers Flagger's four questions.
 type Gate struct {
 	cluster Cluster
 	traffic Traffic
@@ -556,6 +556,84 @@ func (g *Gate) holds(ctx context.Context, q Question, process string) (string, e
 	}
 	if !serves {
 		return process + " changed and has not started its analysis", nil
+	}
+	return "", nil
+}
+
+// crashLoop is how many restarts make a pod of a new copy crash-looping: a serving Process's
+// progress deadline is three startup budgets, so a pod on its fourth start has spent every start
+// its release allows. One restart is a cold start its startup probe cut short once.
+const crashLoop = 3
+
+// RollBack answers whether the member's new copy must be rolled back: once the release can no
+// longer pass. Its own new copy is crash-looping, or another member's Canary carries the revision
+// and has failed, or has a new copy that is crash-looping. Flagger waits on a refused promotion with
+// no deadline, so without it a member that passed would keep its new copy beside its primary.
+//
+// Flagger reads a yes as the member failing, and asks only while the member is analysed or waits
+// at the barrier with its new copy ready: a copy that never becomes ready is its progress
+// deadline's to end, not the gate's.
+func (g *Gate) RollBack(ctx context.Context, q Question) (Answer, error) {
+	read, current, err := g.ask(ctx, q)
+	if err != nil {
+		return Answer{}, err
+	}
+	if !current {
+		return stale(q.Process), nil
+	}
+	looping, err := g.crashLooping(ctx, q.Namespace, q.Process)
+	if err != nil {
+		return Answer{}, err
+	}
+	if looping != "" {
+		return yes(looping), nil
+	}
+	for _, member := range read.gate.Members {
+		if member.Process == q.Process {
+			continue
+		}
+		fails, err := g.cannotPass(ctx, q, member.Process)
+		if err != nil {
+			return Answer{}, err
+		}
+		if fails != "" {
+			return yes(fails), nil
+		}
+	}
+	return no("%s is not crash-looping, and every other member can still pass", q.Process), nil
+}
+
+// cannotPass says why another member of the Application can no longer pass at the revision: empty
+// where it still can. A failed Canary that carries the revision failed at it, or did not change in
+// it and still records an earlier failure; the barrier cannot open at the revision either way.
+func (g *Gate) cannotPass(ctx context.Context, q Question, process string) (string, error) {
+	canary, err := g.cluster.Canary(ctx, q.Namespace, process)
+	if err != nil {
+		return "", fmt.Errorf("gate: read the Canary of %s: %w", process, err)
+	}
+	if canary.Application != q.Application {
+		return "", fmt.Errorf("gate: the Canary of %s is not of this Application", process)
+	}
+	switch {
+	case canary.Revision != q.Revision:
+		return "", nil
+	case canary.Phase == phaseFailed:
+		return process + " failed at this revision", nil
+	}
+	return g.crashLooping(ctx, q.Namespace, process)
+}
+
+// crashLooping names the first pod of the member's new copy that has restarted crashLoop times or
+// more: empty where none has.
+func (g *Gate) crashLooping(ctx context.Context, namespace, process string) (string, error) {
+	pods, err := g.cluster.NewCopy(ctx, namespace, process)
+	if err != nil {
+		return "", fmt.Errorf("gate: read the new copy of %s: %w", process, err)
+	}
+	for _, pod := range pods {
+		if pod.Restarts >= crashLoop {
+			return fmt.Sprintf("%s of %s restarted %d times: its new copy is crash-looping", pod.Name, process, pod.Restarts), nil
+		}
 	}
 	return "", nil
 }

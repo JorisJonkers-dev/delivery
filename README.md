@@ -77,7 +77,7 @@ task check
 
 ## The Release Gate
 
-Flagger asks the gate three questions through each Canary's webhooks
+Flagger asks the gate four questions through each Canary's webhooks
 (deploy-kit `spec/v1/55-delivery.md#the-release-gate`). Each carries the Application, the Process
 and the Application revision, and the gate reads the rest from the cluster.
 
@@ -86,10 +86,13 @@ and the Application revision, and the gate reads the rest from the cluster.
 | `confirm-rollout` | `POST /may-start` | every step of the release has completed: its migration and its prepare Processes, each a Job named for the revision. An Application that has never run one starts at once |
 | `rollout` | `POST /checks` | the member's new copy has a pod, every one is ready, and none has restarted; and the gate's own requests to it stay under the platform's error rate and p95 latency |
 | `confirm-promotion` | `POST /may-promote` | every member of the Application has passed its analysis for this revision or did not change in it: the barrier; and, for a native Client, the member that serves its protected path refuses it to a stranger |
+| `rollback` | `POST /rollback` | the release can no longer pass: a pod of the member's new copy has restarted three times or more, or another member's Canary carries this revision and has failed, or has a pod that has. Flagger reads the yes as the member failing, and asks only while the member is analysed or waits at the barrier with its new copy ready |
 
 Flagger reads a 2xx as yes and anything else as no, so the status is the answer: `200` yes, `409`
 not yet, with what it waits on, `400` a payload that asks nothing, `403` a caller that is not
 Flagger, `503` a question the gate could not answer. Flagger records a refusal's words on the Canary.
+For `rollback` every no, the `503` among them and a `404` from a gate older than the question,
+leaves the release where it is: nothing is rolled back, and the barrier stays shut.
 
 - **A migration the inputs name is a step from the start.** Where the inputs carry a
   `migration`, `may-start` waits for its Job of this revision whether or not that Job is applied
