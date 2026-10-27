@@ -52,7 +52,7 @@ const segment = `[A-Za-z0-9_][A-Za-z0-9_.-]*`
 
 // grantable are the forms of path the render writes for a grant (deploy-kit
 // spec/v1/10-project-intent.md#secrets), each with what it lets a grant do there: read a kv
-// document and its metadata, read a database credential, run a transit operation on one key. A path of any other form, Vault's own `sys/` and `auth/`
+// document and its metadata, read a database credential, run a transit operation on one key or read its public part. A path of any other form, Vault's own `sys/` and `auth/`
 // above all, or a capability the form does not carry, `sudo` above all, is not one the render
 // writes. A form the render gains is refused until this list gains it.
 var grantable = []struct { //nolint:gochecknoglobals // a constant list
@@ -63,6 +63,8 @@ var grantable = []struct { //nolint:gochecknoglobals // a constant list
 	{regexp.MustCompile(`^database/creds/` + segment + `$`), []string{"read"}},
 	{regexp.MustCompile(`^transit/(sign|verify|encrypt|decrypt)/` + segment + `$`), []string{"update"}},
 	{regexp.MustCompile(`^transit/keys/` + segment + `/rotate$`), []string{"update"}},
+	// A key's public part and versions, which the transit operation read grants.
+	{regexp.MustCompile(`^transit/keys/` + segment + `$`), []string{"read"}},
 }
 
 // catalogRoles is the one form a catalog method's identity, `<process>-catalog`, holds beside

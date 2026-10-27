@@ -242,6 +242,22 @@ func TestTheRenderedDocumentsAreReadByName(t *testing.T) {
 	}
 }
 
+// 2026-10-27: auth-api's JWKS reads its transit key's public part, which deploy-kit 1.0 grants
+// as the transit operation read, and the job refused the policy that carried it.
+func TestAPolicyMayReadATransitKeysPublicPart(t *testing.T) {
+	files := postgres()
+	files["auth-system-auth-api.policy.json"] = `{"path":{"transit/sign/auth-api-jwt":{"capabilities":["update"]},"transit/keys/auth-api-jwt":{"capabilities":["read"]}}}`
+	files["auth-system-auth-api.role.json"] = `{"bound_service_account_names":["auth-api"],"bound_service_account_namespaces":["auth-system"],"token_policies":["auth-system-auth-api"]}`
+
+	got, err := vaultpolicy.Read(rendered(t, files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got[0].Policy, `"transit/keys/auth-api-jwt"`) {
+		t.Fatalf("auth-api's policy = %q", got[0].Policy)
+	}
+}
+
 func TestADirectoryThatHoldsAnythingButTheRendersDocumentsIsRefusedWhole(t *testing.T) {
 	role := func(sa, namespace, policy string) string {
 		return `{"bound_service_account_names":["` + sa + `"],"bound_service_account_namespaces":["` + namespace + `"],"token_policies":["` + policy + `"]}`
@@ -279,9 +295,15 @@ func TestADirectoryThatHoldsAnythingButTheRendersDocumentsIsRefusedWhole(t *test
 		"a policy on the mount's parent": {"data-system-postgres.policy.json": grants("secret/config"), "data-system-postgres.role.json": postgresRole},
 		"a policy on the mount itself":   {"data-system-postgres.policy.json": grants("secret/data/"), "data-system-postgres.role.json": postgresRole},
 		"a policy on a templated path":   {"data-system-postgres.policy.json": grants("secret/data/{{identity.entity.name}}"), "data-system-postgres.role.json": postgresRole},
-		"a policy on a key's own record": {"data-system-postgres.policy.json": grants("transit/keys/auth-api-jwt"), "data-system-postgres.role.json": postgresRole},
-		"a policy that exports a key":    {"data-system-postgres.policy.json": grants("transit/export/signing-key/auth-api-jwt"), "data-system-postgres.role.json": postgresRole},
-		"a policy on every credential":   {"data-system-postgres.policy.json": grants("database/creds/auth/extra"), "data-system-postgres.role.json": postgresRole},
+		// A key's own record is read for its public part, and never written: that would configure it.
+		"a policy that writes a key's own record": {
+			"data-system-postgres.policy.json": `{"path":{"transit/keys/auth-api-jwt":{"capabilities":["read","update"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		"a policy that deletes a key": {
+			"data-system-postgres.policy.json": `{"path":{"transit/keys/auth-api-jwt":{"capabilities":["delete"]}}}`, "data-system-postgres.role.json": postgresRole,
+		},
+		"a policy that exports a key":  {"data-system-postgres.policy.json": grants("transit/export/signing-key/auth-api-jwt"), "data-system-postgres.role.json": postgresRole},
+		"a policy on every credential": {"data-system-postgres.policy.json": grants("database/creds/auth/extra"), "data-system-postgres.role.json": postgresRole},
 		// And only what a grant may do there.
 		"a policy that grants sudo": {
 			"data-system-postgres.policy.json": `{"path":{"secret/data/platform/postgres/exporter":{"capabilities":["read","sudo"]}}}`, "data-system-postgres.role.json": postgresRole,
