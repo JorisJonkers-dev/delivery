@@ -49,12 +49,14 @@ func post(t *testing.T, srv *httptest.Server, path, body string) (int, string) {
 	return resp.StatusCode, strings.TrimSpace(string(said))
 }
 
-func TestFlaggersThreeWebhooksAreAnsweredByStatus(t *testing.T) {
+func TestFlaggersFourWebhooksAreAnsweredByStatus(t *testing.T) {
 	through := auth()
 	through.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
 	waiting := auth()
 	waiting.jobs = []gate.Job{{Name: "auth-migration-9d2c4e6a8b0d", Component: "auth-migration"}}
 	waiting.pods["auth-api"] = []gate.Pod{{Name: "auth-api-7c9d-x"}}
+	looping := auth()
+	looping.pods["auth-ui"] = []gate.Pod{{Name: "auth-ui-5b8f-y", Restarts: 3}}
 
 	cases := []struct {
 		name    string
@@ -70,6 +72,8 @@ func TestFlaggersThreeWebhooksAreAnsweredByStatus(t *testing.T) {
 		{"confirm-rollout, the migration not run", waiting, gate.PathMayStart, "Progressing", http.StatusConflict, "auth-migration-9d2c4e6a8b0d has not completed"},
 		{"rollout, the new copy not ready", waiting, gate.PathChecks, "Progressing", http.StatusConflict, "auth-api-7c9d-x is not ready"},
 		{"confirm-promotion, at the barrier", waiting, gate.PathMayPromote, "WaitingPromotion", http.StatusConflict, "auth-ui has not passed its analysis (Progressing)"},
+		{"rollback, the release can still pass", waiting, gate.PathRollBack, "WaitingPromotion", http.StatusConflict, "auth-api is not crash-looping, and every other member can still pass"},
+		{"rollback, another member crash-looping", looping, gate.PathRollBack, "WaitingPromotion", http.StatusOK, "auth-ui-5b8f-y of auth-ui restarted 3 times: its new copy is crash-looping"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,7 +112,7 @@ func TestTheBarrierOpensForEveryMemberOnceTheLastOneArrives(t *testing.T) {
 }
 
 func TestAQuestionTheGateCannotAnswerIsNoAndSaysNothingOfWhy(t *testing.T) {
-	for _, path := range []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote} {
+	for _, path := range []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote, gate.PathRollBack} {
 		c := auth()
 		c.away = "inputs"
 		srv, logged := serve(t, c)
@@ -136,7 +140,7 @@ func TestAPayloadThatAsksNothingIsRefused(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			for _, path := range []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote} {
+			for _, path := range []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote, gate.PathRollBack} {
 				if status, _ := post(t, srv, path, body); status != http.StatusBadRequest {
 					t.Fatalf("%s = %d, want 400", path, status)
 				}
@@ -162,7 +166,7 @@ func TestOnlyAPostAsks(t *testing.T) {
 }
 
 func TestOnlyFlaggerIsAnswered(t *testing.T) {
-	paths := []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote}
+	paths := []string{gate.PathMayStart, gate.PathChecks, gate.PathMayPromote, gate.PathRollBack}
 
 	// Anyone else gets one answer whatever they ask, well-formed or not, about a real member or
 	// not: nothing of the cluster is read for them, so nothing of it is said.

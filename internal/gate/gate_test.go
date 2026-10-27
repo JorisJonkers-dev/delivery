@@ -389,6 +389,81 @@ func TestNoMemberIsPromotedUntilEveryMemberHasPassed(t *testing.T) {
 	}
 }
 
+func TestAReleaseThatCannotPassRollsBack(t *testing.T) {
+	const fine = "auth-api is not crash-looping, and every other member can still pass"
+	cases := map[string]struct {
+		change func(*cluster)
+		yes    bool
+		why    string
+	}{
+		"nothing is wrong": {func(*cluster) {}, false, fine},
+		// One restart is a cold start the startup probe cut short; two is not yet three.
+		"its pod restarted twice": {func(c *cluster) {
+			c.pods["auth-api"] = []gate.Pod{{Name: "auth-api-7c9d-x", Ready: true, Restarts: 2}}
+		}, false, fine},
+		"its pod restarted three times": {func(c *cluster) {
+			c.pods["auth-api"] = []gate.Pod{{Name: "auth-api-7c9d-x", Ready: true}, {Name: "auth-api-7c9d-z", Restarts: 3}}
+		}, true, "auth-api-7c9d-z of auth-api restarted 3 times: its new copy is crash-looping"},
+		// A crash loop is one pod's: two pods that each restarted twice have not.
+		"two pods restarted twice each": {func(c *cluster) {
+			c.pods["auth-api"] = []gate.Pod{{Name: "a", Restarts: 2}, {Name: "b", Restarts: 2}}
+		}, false, fine},
+		"another member failed at this revision": {func(c *cluster) {
+			c.canaries["auth-ui"] = of("Failed", "u2", "u1", 0)
+		}, true, "auth-ui failed at this revision"},
+		"another member is crash-looping": {func(c *cluster) {
+			c.pods["auth-ui"] = []gate.Pod{{Name: "auth-ui-5b8f-y", Restarts: 7}}
+		}, true, "auth-ui-5b8f-y of auth-ui restarted 7 times: its new copy is crash-looping"},
+		// Its Canary is still the earlier render's: what it failed at is not this release.
+		"another member failed at an earlier revision": {func(c *cluster) {
+			c.canaries["auth-ui"] = gate.Canary{Application: "auth", Revision: earlier, Phase: "Failed"}
+			c.pods["auth-ui"] = []gate.Pod{{Name: "auth-ui-5b8f-y", Restarts: 7}}
+		}, false, fine},
+		"another member is waiting at the barrier": {func(c *cluster) {
+			c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
+		}, false, fine},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := auth()
+			tc.change(c)
+			got, err := gate.New(c).RollBack(t.Context(), asks())
+			if err != nil || got.Yes != tc.yes || got.Why != tc.why {
+				t.Fatalf("rollback = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestTheMemberWaitingOnAFailedOneRollsBack(t *testing.T) {
+	// The auth release of 2026-10-27: auth-api's new copy crash-looped on a Vault 403 and failed
+	// at its progress deadline, while auth-ui passed and waited at the barrier, which Flagger waits
+	// on with no deadline. The barrier stays shut; the waiting member is rolled back.
+	c := auth()
+	c.canaries["auth-api"] = of("Progressing", "a2", "a1", 0)
+	c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
+	c.pods["auth-api"] = []gate.Pod{{Name: "auth-api-7c9d-x", Restarts: 4}, {Name: "auth-api-7c9d-w", Restarts: 3}}
+	g := midRelease(t, c)
+
+	// While auth-api crash-loops, auth-ui need not wait out auth-api's deadline.
+	got, err := g.RollBack(t.Context(), asksAs("auth-ui"))
+	if err != nil || !got.Yes || got.Why != "auth-api-7c9d-x of auth-api restarted 4 times: its new copy is crash-looping" {
+		t.Fatalf("rollback of auth-ui beside a crash-looping auth-api = %+v, %v", got, err)
+	}
+	// Once Flagger fails auth-api and scales its new copy to zero, auth-ui is still rolled back.
+	c.canaries["auth-api"] = of("Failed", "a2", "a1", 0)
+	c.pods["auth-api"] = nil
+	got, err = g.RollBack(t.Context(), asksAs("auth-ui"))
+	if err != nil || !got.Yes || got.Why != "auth-api failed at this revision" {
+		t.Fatalf("rollback of auth-ui once auth-api failed = %+v, %v", got, err)
+	}
+	// And the barrier it waited at stays shut.
+	shut, err := g.MayPromote(t.Context(), asksAs("auth-ui"))
+	if err != nil || shut.Yes || shut.Why != "auth-api has not passed its analysis (Failed)" {
+		t.Fatalf("may-promote of auth-ui = %+v, %v", shut, err)
+	}
+}
+
 func TestAMemberSeenWaitingCountsOnlyOnceItHasAskedAtThisRevision(t *testing.T) {
 	// Flagger's status carries no revision. A member read as waiting, promoting or finishing may
 	// be so from the release before, a moment before Flagger notices this one.
@@ -459,7 +534,7 @@ func TestTheMemberThatAsksIsHeldToItsOwnRecord(t *testing.T) {
 func TestAQuestionIsAnsweredOnlyAtTheRevisionItsCanaryCarries(t *testing.T) {
 	// The Canary is of another render than the question: one that was replaced, or one a caller
 	// who cannot read the Canary made up. Nothing is read past it, and nothing is said of it.
-	for name, ask := range map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote} {
+	for name, ask := range map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote, "rollback": (*gate.Gate).RollBack} {
 		c := auth()
 		c.canaries["auth-api"] = gate.Canary{Application: "auth", Revision: earlier, Phase: "WaitingPromotion", Iterations: 4}
 		c.canaries["auth-ui"] = of("WaitingPromotion", "u2", "u1", 4)
@@ -480,7 +555,7 @@ func TestAQuestionIsAnsweredOnlyAtTheRevisionItsCanaryCarries(t *testing.T) {
 }
 
 func TestACanaryOfAnotherApplicationIsNotTheQuestions(t *testing.T) {
-	for name, ask := range map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote} {
+	for name, ask := range map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote, "rollback": (*gate.Gate).RollBack} {
 		c := auth()
 		c.canaries["auth-api"] = gate.Canary{Application: "mail", Revision: revision, Phase: "WaitingPromotion"}
 		if got, err := ask(gate.New(c), t.Context(), asks()); err == nil || got.Yes {
@@ -493,16 +568,22 @@ func TestACanaryOfAnotherApplicationIsNotTheQuestions(t *testing.T) {
 	if got, err := gate.New(gone).MayPromote(t.Context(), asks()); err == nil || got.Yes {
 		t.Fatalf("may-promote past a member with no Canary = %+v, %v", got, err)
 	}
+	if got, err := gate.New(gone).RollBack(t.Context(), asks()); err == nil || got.Yes {
+		t.Fatalf("rollback beside a member with no Canary = %+v, %v", got, err)
+	}
 	// And a member's Canary that names another Application holds no place at this barrier.
 	c := auth()
 	c.canaries["auth-ui"] = gate.Canary{Application: "mail", Revision: revision, Phase: "WaitingPromotion"}
 	if got, err := gate.New(c).MayPromote(t.Context(), asks()); err == nil || got.Yes {
 		t.Fatalf("may-promote past a member of another Application = %+v, %v", got, err)
 	}
+	if got, err := gate.New(c).RollBack(t.Context(), asks()); err == nil || got.Yes {
+		t.Fatalf("rollback beside a member of another Application = %+v, %v", got, err)
+	}
 }
 
 func TestTheGateFailsClosed(t *testing.T) {
-	questions := map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote}
+	questions := map[string]question{"may-start": (*gate.Gate).MayStart, "checks": (*gate.Gate).Checks, "may-promote": (*gate.Gate).MayPromote, "rollback": (*gate.Gate).RollBack}
 	breaks := map[string]func(*cluster){
 		"the inputs cannot be read":         func(c *cluster) { c.away = "inputs" },
 		"the inputs are not JSON":           func(c *cluster) { c.inputs = "{" },
@@ -537,6 +618,8 @@ func TestTheGateFailsClosed(t *testing.T) {
 		"checks when its Canary cannot be read":               {(*gate.Gate).Checks, "canary", nil},
 		"may-promote when a Deployment is unreadable":         {(*gate.Gate).MayPromote, "serves", nil},
 		"may-start when a Process it waits for is unreadable": {(*gate.Gate).MayStart, "started", nil},
+		"rollback when the pods cannot be read":               {(*gate.Gate).RollBack, "pods", nil},
+		"rollback when its Canary cannot be read":             {(*gate.Gate).RollBack, "canary", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := auth()
