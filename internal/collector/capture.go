@@ -1,16 +1,12 @@
 // Package collector captures the ClusterState snapshot: the facts only the cluster can say,
-// which node holds each bound volume, where each Process runs, and how each Rollback's backup
-// ended, written to the Estate repository when, and only when, they change
+// which node holds each bound volume and where each Process runs, written to the Estate repository when, and only when, they change
 // (deploy-kit spec/v1/20-resolved-deployment.md#cluster-state).
 package collector
 
 import (
 	"cmp"
 	"slices"
-	"strings"
-	"time"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -26,23 +22,6 @@ const (
 // only those pods are Processes.
 const ManagedSelector = managedByLabel + "=" + managedBy
 
-// BackupLabel holds the request a Rollback's backup Job ran for
-// (deploy-kit spec/v1/30-deliverables.md#a-rollbacks-backup).
-const BackupLabel = "estate.jorisjonkers.dev/rollback-backup"
-
-// BackupSelector selects the Jobs deploy-kit renders for a Rollback's backup: marked with a
-// request, and rendered by the model, as a placement's pod is.
-const BackupSelector = BackupLabel + "," + ManagedSelector
-
-// namespaceSuffix ends every Project's namespace, which is its name and this.
-const namespaceSuffix = "-system"
-
-// The outcomes a Rollback's backup Job ends in: a running one has none yet.
-const (
-	Succeeded = "succeeded"
-	Failed    = "failed"
-)
-
 // Binding is a bound claim and the node holding its volume.
 type Binding struct {
 	Claim string
@@ -55,72 +34,15 @@ type Placement struct {
 	Node    string
 }
 
-// Backup is a Rollback's one-shot backup Job that has ended, and how.
-type Backup struct {
-	Request    string
-	Project    string
-	Job        string
-	Outcome    string
-	FinishedAt string
-}
-
 // Facts is what a snapshot records, without when it was captured: that is not a fact.
 type Facts struct {
 	Bindings   []Binding
 	Placements []Placement
-	Backups    []Backup
 }
 
 // Equal reports whether two captures say the same thing.
 func (f Facts) Equal(other Facts) bool {
-	return slices.Equal(f.Bindings, other.Bindings) && slices.Equal(f.Placements, other.Placements) &&
-		slices.Equal(f.Backups, other.Backups)
-}
-
-// CaptureBackups reads how each Rollback's backup Job ended. A Job still running says nothing
-// yet, and one deploy-kit did not render says nothing at all: the outcome moves a pin, so a Job
-// is believed only where it carries the request, the mark of the model's render, and a Project's
-// namespace. The result is ordered.
-func CaptureBackups(jobs []batchv1.Job) []Backup {
-	var backups []Backup
-	for i := range jobs {
-		job := &jobs[i]
-		request := job.Labels[BackupLabel]
-		outcome, at, ended := endOf(job)
-		if request == "" || job.Labels[managedByLabel] != managedBy ||
-			!strings.HasSuffix(job.Namespace, namespaceSuffix) || !ended {
-			continue
-		}
-		backups = append(backups, Backup{
-			Request:    request,
-			Project:    strings.TrimSuffix(job.Namespace, namespaceSuffix),
-			Job:        job.Name,
-			Outcome:    outcome,
-			FinishedAt: at.UTC().Format(time.RFC3339),
-		})
-	}
-	return ordered(backups, func(a, b Backup) int {
-		return cmp.Or(cmp.Compare(a.Request, b.Request), cmp.Compare(a.Project, b.Project), cmp.Compare(a.Job, b.Job))
-	})
-}
-
-// endOf is how a Job ended and when, read from the condition the Job controller sets once it
-// has: Complete or Failed, true.
-func endOf(job *batchv1.Job) (string, time.Time, bool) {
-	for _, condition := range job.Status.Conditions {
-		if condition.Status != corev1.ConditionTrue {
-			continue
-		}
-		switch condition.Type {
-		case batchv1.JobComplete:
-			return Succeeded, condition.LastTransitionTime.Time, true
-		case batchv1.JobFailed:
-			return Failed, condition.LastTransitionTime.Time, true
-		case batchv1.JobSuspended, batchv1.JobFailureTarget, batchv1.JobSuccessCriteriaMet:
-			// On the way to one of the two, or held: not an end.
-		}
-	}
-	return "", time.Time{}, false
+	return slices.Equal(f.Bindings, other.Bindings) && slices.Equal(f.Placements, other.Placements)
 }
 
 // Capture reads the facts out of what the cluster holds. The result is ordered and free of
