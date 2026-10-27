@@ -406,16 +406,38 @@ func uncopyEnvironment(c *corev1.Container, source func(*string)) {
 	}
 }
 
+// labelTemplate is the label a Deployment's ReplicaSet gives each of its pods.
+const labelTemplate = "pod-template-hash"
+
+// newestTemplate is the pod-template-hash of the newest ReplicaSet: the one whose pod not being
+// deleted was created last.
+func newestTemplate(pods []corev1.Pod) string {
+	newest := ""
+	var created metav1.Time
+	for _, pod := range pods {
+		if pod.DeletionTimestamp == nil && !pod.CreationTimestamp.Before(&created) {
+			created, newest = pod.CreationTimestamp, pod.Labels[labelTemplate]
+		}
+	}
+	return newest
+}
+
 // NewCopy implements Cluster. Flagger's primary carries the member's `instance` and its own
-// `name`, `<process>-primary`, so the two labels together select the new copy alone.
+// `name`, `<process>-primary`, so the two labels together select the new copy alone. Of those, only
+// the pods of the Deployment's newest ReplicaSet that are not being deleted are the new copy: a
+// release that replaces another mid-analysis leaves the earlier one's pods going for a while.
 func (k Kube) NewCopy(ctx context.Context, namespace, process string) ([]Pod, error) {
 	selector := labelInstance + "=" + process + "," + labelName + "=" + process
 	list, err := k.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
 		return nil, err
 	}
+	newest := newestTemplate(list.Items)
 	pods := make([]Pod, 0, len(list.Items))
 	for _, pod := range list.Items {
+		if pod.DeletionTimestamp != nil || pod.Labels[labelTemplate] != newest {
+			continue
+		}
 		var restarts int32
 		for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
 			restarts += status.RestartCount

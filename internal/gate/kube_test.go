@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -375,6 +376,37 @@ func TestTheNewCopyIsThePodsNamedForTheProcessNeverThePrimarys(t *testing.T) {
 		if want[p.Name] != p {
 			t.Fatalf("pod %+v, want %+v", p, want[p.Name])
 		}
+	}
+}
+
+// 2026-10-27: a release that replaced an earlier one mid-analysis was held twice for the earlier
+// release's pod, which Kubernetes was already deleting.
+func TestTheNewCopyIsTheNewestReplicaSetsPodsThatAreNotGoing(t *testing.T) {
+	hashed := func(name, hash string, created time.Time, ready corev1.ConditionStatus) *corev1.Pod {
+		l := labels("findability-explorer", "findability-explorer")
+		l["pod-template-hash"] = hash
+		p := pod(name, l, ready)
+		p.CreationTimestamp = metav1.NewTime(created)
+		return p
+	}
+	at := time.Date(2026, 10, 27, 17, 49, 0, 0, time.UTC)
+	dying := hashed("findability-explorer-6f5c-zpr4d", "6f5c", at, corev1.ConditionFalse)
+	gone := metav1.NewTime(at.Add(5 * time.Minute))
+	dying.DeletionTimestamp = &gone
+	dying.Finalizers = []string{"kubernetes"}
+	k := kube([]runtime.Object{
+		dying,
+		// Of an older ReplicaSet, not yet deleted: still not the new copy.
+		hashed("findability-explorer-6f5c-older", "6f5c", at.Add(time.Minute), corev1.ConditionFalse),
+		hashed("findability-explorer-5bdb-bp8r8", "5bdb", at.Add(5*time.Minute), corev1.ConditionTrue),
+	})
+
+	got, err := k.NewCopy(t.Context(), ns, "findability-explorer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []gate.Pod{{Name: "findability-explorer-5bdb-bp8r8", Ready: true}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("new copy = %+v, want %+v", got, want)
 	}
 }
 
