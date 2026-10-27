@@ -13,9 +13,6 @@ type Snapshot struct {
 	// ApiVersion corresponds to the JSON schema field "apiVersion".
 	ApiVersion string `json:"apiVersion"`
 
-	// Backups corresponds to the JSON schema field "backups".
-	Backups []SnapshotBackupsElem `json:"backups,omitempty,omitzero"`
-
 	// Bindings corresponds to the JSON schema field "bindings".
 	Bindings []SnapshotBindingsElem `json:"bindings"`
 
@@ -25,6 +22,9 @@ type Snapshot struct {
 	// Cluster corresponds to the JSON schema field "cluster".
 	Cluster string `json:"cluster"`
 
+	// Instances corresponds to the JSON schema field "instances".
+	Instances []SnapshotInstancesElem `json:"instances,omitempty,omitzero"`
+
 	// Kind corresponds to the JSON schema field "kind".
 	Kind string `json:"kind"`
 
@@ -33,92 +33,6 @@ type Snapshot struct {
 
 	// SchemaVersion corresponds to the JSON schema field "schemaVersion".
 	SchemaVersion string `json:"schemaVersion"`
-}
-
-type SnapshotBackupsElem struct {
-	// FinishedAt corresponds to the JSON schema field "finishedAt".
-	FinishedAt time.Time `json:"finishedAt"`
-
-	// Job corresponds to the JSON schema field "job".
-	Job string `json:"job"`
-
-	// Outcome corresponds to the JSON schema field "outcome".
-	Outcome SnapshotBackupsElemOutcome `json:"outcome"`
-
-	// Project corresponds to the JSON schema field "project".
-	Project string `json:"project"`
-
-	// Request corresponds to the JSON schema field "request".
-	Request string `json:"request"`
-}
-
-type SnapshotBackupsElemOutcome string
-
-const SnapshotBackupsElemOutcomeFailed SnapshotBackupsElemOutcome = "failed"
-const SnapshotBackupsElemOutcomeSucceeded SnapshotBackupsElemOutcome = "succeeded"
-
-var enumValues_SnapshotBackupsElemOutcome = []interface{}{
-	"succeeded",
-	"failed",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SnapshotBackupsElemOutcome) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_SnapshotBackupsElemOutcome {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SnapshotBackupsElemOutcome, v)
-	}
-	*j = SnapshotBackupsElemOutcome(v)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SnapshotBackupsElem) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["finishedAt"]; raw != nil && !ok {
-		return fmt.Errorf("field finishedAt in SnapshotBackupsElem: required")
-	}
-	if _, ok := raw["job"]; raw != nil && !ok {
-		return fmt.Errorf("field job in SnapshotBackupsElem: required")
-	}
-	if _, ok := raw["outcome"]; raw != nil && !ok {
-		return fmt.Errorf("field outcome in SnapshotBackupsElem: required")
-	}
-	if _, ok := raw["project"]; raw != nil && !ok {
-		return fmt.Errorf("field project in SnapshotBackupsElem: required")
-	}
-	if _, ok := raw["request"]; raw != nil && !ok {
-		return fmt.Errorf("field request in SnapshotBackupsElem: required")
-	}
-	type Plain SnapshotBackupsElem
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.Job)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "job", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Project)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "project", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Request)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "request", 1)
-	}
-	*j = SnapshotBackupsElem(plain)
-	return nil
 }
 
 type SnapshotBindingsElem struct {
@@ -153,6 +67,112 @@ func (j *SnapshotBindingsElem) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
 	}
 	*j = SnapshotBindingsElem(plain)
+	return nil
+}
+
+type SnapshotInstancesElem struct {
+	// Application corresponds to the JSON schema field "application".
+	Application string `json:"application"`
+
+	// FlippedAt corresponds to the JSON schema field "flippedAt".
+	FlippedAt *time.Time `json:"flippedAt,omitempty,omitzero"`
+
+	// Instance corresponds to the JSON schema field "instance".
+	Instance string `json:"instance"`
+
+	// Namespace corresponds to the JSON schema field "namespace".
+	Namespace string `json:"namespace"`
+
+	// Node corresponds to the JSON schema field "node".
+	Node string `json:"node"`
+
+	// Phase corresponds to the JSON schema field "phase".
+	Phase *SnapshotInstancesElemPhase `json:"phase,omitempty,omitzero"`
+
+	// Version corresponds to the JSON schema field "version".
+	Version string `json:"version"`
+}
+
+type SnapshotInstancesElemPhase string
+
+const SnapshotInstancesElemPhaseFence SnapshotInstancesElemPhase = "fence"
+const SnapshotInstancesElemPhaseLag SnapshotInstancesElemPhase = "lag"
+const SnapshotInstancesElemPhaseRetire SnapshotInstancesElemPhase = "retire"
+const SnapshotInstancesElemPhaseReverse SnapshotInstancesElemPhase = "reverse"
+const SnapshotInstancesElemPhaseSync SnapshotInstancesElemPhase = "sync"
+const SnapshotInstancesElemPhaseUnfence SnapshotInstancesElemPhase = "unfence"
+
+var enumValues_SnapshotInstancesElemPhase = []interface{}{
+	"sync",
+	"lag",
+	"fence",
+	"unfence",
+	"reverse",
+	"retire",
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SnapshotInstancesElemPhase) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_SnapshotInstancesElemPhase {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SnapshotInstancesElemPhase, v)
+	}
+	*j = SnapshotInstancesElemPhase(v)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SnapshotInstancesElem) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["application"]; raw != nil && !ok {
+		return fmt.Errorf("field application in SnapshotInstancesElem: required")
+	}
+	if _, ok := raw["instance"]; raw != nil && !ok {
+		return fmt.Errorf("field instance in SnapshotInstancesElem: required")
+	}
+	if _, ok := raw["namespace"]; raw != nil && !ok {
+		return fmt.Errorf("field namespace in SnapshotInstancesElem: required")
+	}
+	if _, ok := raw["node"]; raw != nil && !ok {
+		return fmt.Errorf("field node in SnapshotInstancesElem: required")
+	}
+	if _, ok := raw["version"]; raw != nil && !ok {
+		return fmt.Errorf("field version in SnapshotInstancesElem: required")
+	}
+	type Plain SnapshotInstancesElem
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(string(plain.Application)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "application", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Instance)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "instance", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
+	}
+	if utf8.RuneCountInString(string(plain.Node)) < 1 {
+		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
+	}
+	if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, string(plain.Version)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "Version", `^\d+\.\d+\.\d+$`)
+	}
+	*j = SnapshotInstancesElem(plain)
 	return nil
 }
 

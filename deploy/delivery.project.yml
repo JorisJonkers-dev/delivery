@@ -83,6 +83,11 @@ applications:
         cutover: continuous
 
   - id: release-gate
+    # The gate serves each round of tending at /metrics, to the metrics stack alone
+    # (JorisJonkers-dev/delivery#22): a rolling Process, scraped through a ServiceMonitor over its
+    # own Service. The alerts are fleet-infra's `platform-release-gate` group.
+    observability:
+      scrape: { process: release-gate, surface: http, path: /metrics }
     processes:
       - name: release-gate
         lifecycle: application
@@ -106,12 +111,17 @@ applications:
             the Release Gate answers Flagger from what the cluster holds, so it reads each gated
             Application's inputs, Canaries, Deployments, Jobs and pods; it finds the gated
             Applications by listing ConfigMaps, keeps each one's release record in a ConfigMap of
-            its own, unsuspends the migration Jobs it starts, and deletes a gated Application's
+            its own in its own namespace, so it writes ConfigMaps nowhere else, unsuspends the migration Jobs it starts, and deletes a gated Application's
             Vault sync objects of an older revision once it serves the new one
           rules:
             - group: core
               objects: [configmaps]
-              verbs: [get, list, create, update]
+              verbs: [get, list]
+            # Every release record is in the gate's own namespace (JorisJonkers-dev/delivery#21).
+            - group: core
+              objects: [configmaps]
+              verbs: [create, update]
+              scope: namespace
             - group: core
               objects: [pods]
               verbs: [list]

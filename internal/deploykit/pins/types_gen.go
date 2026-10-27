@@ -22,10 +22,6 @@ type PinAnnotations struct {
 	// "estate.jorisjonkers.dev/paused-reason".
 	EstateJorisjonkersDevPausedReason *string `json:"estate.jorisjonkers.dev/paused-reason,omitempty,omitzero"`
 
-	// EstateJorisjonkersDevRollbackBackup corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/rollback-backup".
-	EstateJorisjonkersDevRollbackBackup *string `json:"estate.jorisjonkers.dev/rollback-backup,omitempty,omitzero"`
-
 	// EstateJorisjonkersDevRollbackFragment corresponds to the JSON schema field
 	// "estate.jorisjonkers.dev/rollback-fragment".
 	EstateJorisjonkersDevRollbackFragment *string `json:"estate.jorisjonkers.dev/rollback-fragment,omitempty,omitzero"`
@@ -105,9 +101,13 @@ type PinAnnotations_2 struct {
 	// "estate.jorisjonkers.dev/paused-reason".
 	EstateJorisjonkersDevPausedReason string `json:"estate.jorisjonkers.dev/paused-reason"`
 
-	// EstateJorisjonkersDevRollbackBackup corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/rollback-backup".
-	EstateJorisjonkersDevRollbackBackup string `json:"estate.jorisjonkers.dev/rollback-backup"`
+	// EstateJorisjonkersDevRollbackFragment corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/rollback-fragment".
+	EstateJorisjonkersDevRollbackFragment string `json:"estate.jorisjonkers.dev/rollback-fragment"`
+
+	// EstateJorisjonkersDevRollbackVersion corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/rollback-version".
+	EstateJorisjonkersDevRollbackVersion string `json:"estate.jorisjonkers.dev/rollback-version"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -125,71 +125,13 @@ func (j *PinAnnotations_2) UnmarshalJSON(value []byte) error {
 	if _, ok := raw["estate.jorisjonkers.dev/paused-reason"]; raw != nil && !ok {
 		return fmt.Errorf("field estate.jorisjonkers.dev/paused-reason in PinAnnotations_2: required")
 	}
-	if _, ok := raw["estate.jorisjonkers.dev/rollback-backup"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/rollback-backup in PinAnnotations_2: required")
-	}
-	type Plain PinAnnotations_2
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.EstateJorisjonkersDevPausedBy)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "estate.jorisjonkers.dev/paused-by", 1)
-	}
-	if utf8.RuneCountInString(string(plain.EstateJorisjonkersDevPausedReason)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "estate.jorisjonkers.dev/paused-reason", 1)
-	}
-	if matched, _ := regexp.MatchString(`^[A-Za-z0-9]([A-Za-z0-9-]{0,18}[A-Za-z0-9])?$`, string(plain.EstateJorisjonkersDevRollbackBackup)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "EstateJorisjonkersDevRollbackBackup", `^[A-Za-z0-9]([A-Za-z0-9-]{0,18}[A-Za-z0-9])?$`)
-	}
-	*j = PinAnnotations_2(plain)
-	return nil
-}
-
-type PinAnnotations_3 struct {
-	// EstateJorisjonkersDevPausedAt corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/paused-at".
-	EstateJorisjonkersDevPausedAt time.Time `json:"estate.jorisjonkers.dev/paused-at"`
-
-	// EstateJorisjonkersDevPausedBy corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/paused-by".
-	EstateJorisjonkersDevPausedBy string `json:"estate.jorisjonkers.dev/paused-by"`
-
-	// EstateJorisjonkersDevPausedReason corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/paused-reason".
-	EstateJorisjonkersDevPausedReason string `json:"estate.jorisjonkers.dev/paused-reason"`
-
-	// EstateJorisjonkersDevRollbackFragment corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/rollback-fragment".
-	EstateJorisjonkersDevRollbackFragment string `json:"estate.jorisjonkers.dev/rollback-fragment"`
-
-	// EstateJorisjonkersDevRollbackVersion corresponds to the JSON schema field
-	// "estate.jorisjonkers.dev/rollback-version".
-	EstateJorisjonkersDevRollbackVersion string `json:"estate.jorisjonkers.dev/rollback-version"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *PinAnnotations_3) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["estate.jorisjonkers.dev/paused-at"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/paused-at in PinAnnotations_3: required")
-	}
-	if _, ok := raw["estate.jorisjonkers.dev/paused-by"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/paused-by in PinAnnotations_3: required")
-	}
-	if _, ok := raw["estate.jorisjonkers.dev/paused-reason"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/paused-reason in PinAnnotations_3: required")
-	}
 	if _, ok := raw["estate.jorisjonkers.dev/rollback-fragment"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/rollback-fragment in PinAnnotations_3: required")
+		return fmt.Errorf("field estate.jorisjonkers.dev/rollback-fragment in PinAnnotations_2: required")
 	}
 	if _, ok := raw["estate.jorisjonkers.dev/rollback-version"]; raw != nil && !ok {
-		return fmt.Errorf("field estate.jorisjonkers.dev/rollback-version in PinAnnotations_3: required")
+		return fmt.Errorf("field estate.jorisjonkers.dev/rollback-version in PinAnnotations_2: required")
 	}
-	type Plain PinAnnotations_3
+	type Plain PinAnnotations_2
 	var plain Plain
 	if err := json.Unmarshal(value, &plain); err != nil {
 		return err
@@ -206,7 +148,7 @@ func (j *PinAnnotations_3) UnmarshalJSON(value []byte) error {
 	if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, string(plain.EstateJorisjonkersDevRollbackVersion)); !matched {
 		return fmt.Errorf("field %s pattern match: must match %s", "EstateJorisjonkersDevRollbackVersion", `^\d+\.\d+\.\d+$`)
 	}
-	*j = PinAnnotations_3(plain)
+	*j = PinAnnotations_2(plain)
 	return nil
 }
 
@@ -219,7 +161,6 @@ func (j *PinAnnotations) UnmarshalJSON(value []byte) error {
 	var pinAnnotations_0 PinAnnotations_0
 	var pinAnnotations_1 PinAnnotations_1
 	var pinAnnotations_2 PinAnnotations_2
-	var pinAnnotations_3 PinAnnotations_3
 	var errs []error
 	if err := pinAnnotations_0.UnmarshalJSON(value); err != nil {
 		errs = append(errs, err)
@@ -230,10 +171,7 @@ func (j *PinAnnotations) UnmarshalJSON(value []byte) error {
 	if err := pinAnnotations_2.UnmarshalJSON(value); err != nil {
 		errs = append(errs, err)
 	}
-	if err := pinAnnotations_3.UnmarshalJSON(value); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) == 4 {
+	if len(errs) == 3 {
 		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
 	}
 	type Plain PinAnnotations
