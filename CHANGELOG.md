@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.1...v0.15.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **vaultpolicy:** accept read on a transit key's own record ([#101](https://github.com/JorisJonkers-dev/delivery/issues/101)) ([1f366e2](https://github.com/JorisJonkers-dev/delivery/commit/1f366e2fe2dfedda9cae94132fcc53061952fd75))
+
 ## [0.15.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.0...v0.15.1) (2026-10-27)
 
 
