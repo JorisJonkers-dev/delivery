@@ -58,13 +58,6 @@
           "renderHash": "sha256:b04c05357fb8b157bacf52538c45076fcede252472ba53708efaa6ca04b97993",
           "schemaPackageIntegrity": "sha256:5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b5e6f7a8b"
         },
-        "pathPlan": [
-          {
-            "path": "apps/notes",
-            "adapter": "kubernetes",
-            "scope": "application"
-          }
-        ],
         "reconcileUnits": [
           {
             "name": "apps-notes"
@@ -260,18 +253,6 @@
       ]
     },
     {
-      "name": "a deployment with no path plan",
-      "verdict": "refuse",
-      "breaks": "missing-required",
-      "case": "minimal's estate as one Resolved Deployment",
-      "patch": [
-        {
-          "op": "remove",
-          "path": "/pathPlan"
-        }
-      ]
-    },
-    {
       "name": "applications written as one object",
       "verdict": "refuse",
       "breaks": "wrong-type",
@@ -456,19 +437,6 @@
       ]
     },
     {
-      "name": "a path assigned to no adapter the registry knows",
-      "verdict": "refuse",
-      "breaks": "enum",
-      "case": "minimal's estate as one Resolved Deployment",
-      "patch": [
-        {
-          "op": "replace",
-          "path": "/pathPlan/0/adapter",
-          "value": "helm"
-        }
-      ]
-    },
-    {
       "name": "a projection's kind on the estate-wide document",
       "verdict": "refuse",
       "breaks": "enum",
@@ -541,7 +509,9 @@
             "memory": "64Mi",
             "cpu": "10m",
             "deadline": "120s",
-            "eligibleNodes": ["frankfurt-contabo-1"],
+            "eligibleNodes": [
+              "frankfurt-contabo-1"
+            ],
             "egress": [
               {
                 "rule": "secret-store",
@@ -578,7 +548,9 @@
             "memory": "64Mi",
             "cpu": "10m",
             "deadline": "120s",
-            "eligibleNodes": ["frankfurt-contabo-1"],
+            "eligibleNodes": [
+              "frankfurt-contabo-1"
+            ],
             "egress": [
               {
                 "rule": "secret-store",

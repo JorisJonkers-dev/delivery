@@ -22,6 +22,10 @@ type PinAnnotations struct {
 	// "estate.jorisjonkers.dev/paused-reason".
 	EstateJorisjonkersDevPausedReason *string `json:"estate.jorisjonkers.dev/paused-reason,omitempty,omitzero"`
 
+	// EstateJorisjonkersDevRetriedAt corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/retried-at".
+	EstateJorisjonkersDevRetriedAt *time.Time `json:"estate.jorisjonkers.dev/retried-at,omitempty,omitzero"`
+
 	// EstateJorisjonkersDevRollbackFragment corresponds to the JSON schema field
 	// "estate.jorisjonkers.dev/rollback-fragment".
 	EstateJorisjonkersDevRollbackFragment *string `json:"estate.jorisjonkers.dev/rollback-fragment,omitempty,omitzero"`
@@ -31,7 +35,11 @@ type PinAnnotations struct {
 	EstateJorisjonkersDevRollbackVersion *string `json:"estate.jorisjonkers.dev/rollback-version,omitempty,omitzero"`
 }
 
-type PinAnnotations_0 map[string]interface{}
+type PinAnnotations_0 struct {
+	// EstateJorisjonkersDevRetriedAt corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/retried-at".
+	EstateJorisjonkersDevRetriedAt *time.Time `json:"estate.jorisjonkers.dev/retried-at,omitempty,omitzero"`
+}
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *PinAnnotations_0) UnmarshalJSON(value []byte) error {
@@ -56,6 +64,10 @@ type PinAnnotations_1 struct {
 	// EstateJorisjonkersDevPausedReason corresponds to the JSON schema field
 	// "estate.jorisjonkers.dev/paused-reason".
 	EstateJorisjonkersDevPausedReason string `json:"estate.jorisjonkers.dev/paused-reason"`
+
+	// EstateJorisjonkersDevRetriedAt corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/retried-at".
+	EstateJorisjonkersDevRetriedAt *time.Time `json:"estate.jorisjonkers.dev/retried-at,omitempty,omitzero"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -100,6 +112,10 @@ type PinAnnotations_2 struct {
 	// EstateJorisjonkersDevPausedReason corresponds to the JSON schema field
 	// "estate.jorisjonkers.dev/paused-reason".
 	EstateJorisjonkersDevPausedReason string `json:"estate.jorisjonkers.dev/paused-reason"`
+
+	// EstateJorisjonkersDevRetriedAt corresponds to the JSON schema field
+	// "estate.jorisjonkers.dev/retried-at".
+	EstateJorisjonkersDevRetriedAt *time.Time `json:"estate.jorisjonkers.dev/retried-at,omitempty,omitzero"`
 
 	// EstateJorisjonkersDevRollbackFragment corresponds to the JSON schema field
 	// "estate.jorisjonkers.dev/rollback-fragment".
