@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.16.0...v0.16.1) (2026-10-29)
+
+
+### Miscellaneous Chores
+
+* **deploy:** publish fragments with deploy-kit 1.3.0 ([#107](https://github.com/JorisJonkers-dev/delivery/issues/107)) ([0e92f47](https://github.com/JorisJonkers-dev/delivery/commit/0e92f4705a8387fa7609a6c962a38ecf437f023f))
+
 ## [0.16.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.15.2...v0.16.0) (2026-10-27)
 
 
