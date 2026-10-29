@@ -27,6 +27,25 @@
       }
     },
     {
+      "name": "a retried pin",
+      "verdict": "accept",
+      "instance": {
+        "estate.jorisjonkers.dev/retried-at": "2026-10-27T09:00:00Z"
+      }
+    },
+    {
+      "name": "a pin rolled back, paused and retried",
+      "verdict": "accept",
+      "case": "a pin rolled back and paused",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/estate.jorisjonkers.dev~1retried-at",
+          "value": "2026-10-27T09:00:00Z"
+        }
+      ]
+    },
+    {
       "name": "an annotation the model does not have",
       "verdict": "refuse",
       "breaks": "unknown-field",
@@ -72,6 +91,19 @@
         "estate.jorisjonkers.dev/rollback-version": "2.1.2",
         "estate.jorisjonkers.dev/rollback-fragment": "ghcr.io/jorisjonkers-dev/intent-knowledge@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
+    },
+    {
+      "name": "a retry counted rather than timed",
+      "verdict": "refuse",
+      "breaks": "union",
+      "case": "a retried pin",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/estate.jorisjonkers.dev~1retried-at",
+          "value": "3"
+        }
+      ]
     }
   ]
 }

@@ -16,13 +16,6 @@
         "provenance": {
           "$ref": "#/$defs/Provenance"
         },
-        "pathPlan": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/PathAssignment"
-          }
-        },
         "reconcileUnits": {
           "minItems": 1,
           "type": "array",
@@ -55,7 +48,6 @@
         "apiVersion",
         "kind",
         "provenance",
-        "pathPlan",
         "reconcileUnits",
         "applications"
       ],
@@ -117,46 +109,6 @@
         "node-contract",
         "images-lock",
         "cluster-state"
-      ]
-    },
-    "PathAssignment": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "adapter": {
-          "$ref": "#/$defs/AdapterName"
-        },
-        "scope": {
-          "$ref": "#/$defs/PathScope"
-        }
-      },
-      "required": [
-        "path",
-        "adapter",
-        "scope"
-      ],
-      "additionalProperties": false
-    },
-    "AdapterName": {
-      "type": "string",
-      "enum": [
-        "kubernetes",
-        "networking",
-        "prometheus",
-        "traefik",
-        "vault-policy",
-        "vso"
-      ]
-    },
-    "PathScope": {
-      "type": "string",
-      "enum": [
-        "estate",
-        "project",
-        "application"
       ]
     },
     "ReconcileUnit": {
@@ -225,6 +177,9 @@
         },
         "scrape": {
           "$ref": "#/$defs/ResolvedScrape"
+        },
+        "fluxScrape": {
+          "$ref": "#/$defs/ResolvedFluxScrape"
         },
         "dashboards": {
           "$ref": "#/$defs/ResolvedDashboards"
@@ -434,6 +389,51 @@
       "required": [
         "process",
         "surface",
+        "path",
+        "interval",
+        "timeout"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedFluxScrape": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "labels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "namespace",
+        "port",
         "path",
         "interval",
         "timeout"
@@ -915,7 +915,9 @@
       "enum": [
         "cluster-dns",
         "secret-store",
-        "datastore"
+        "datastore",
+        "scrape-target",
+        "flux-metrics"
       ]
     },
     "ResolvedExposure": {
@@ -1232,6 +1234,10 @@
             "minLength": 1
           }
         },
+        "backChannelLogoutUri": {
+          "type": "string",
+          "minLength": 1
+        },
         "credential": {
           "$ref": "#/$defs/ClientCredential"
         },
@@ -1331,6 +1337,21 @@
           "type": "string",
           "minLength": 1
         },
+        "command": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "args": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "uid": {
           "type": "integer",
           "minimum": 0,
@@ -1391,6 +1412,9 @@
         },
         "vpn": {
           "$ref": "#/$defs/ResolvedVpn"
+        },
+        "seeder": {
+          "$ref": "#/$defs/ResolvedSeeder"
         },
         "hardening": {
           "$ref": "#/$defs/HardeningClass"
@@ -1872,6 +1896,14 @@
             "additionalProperties": false
           }
         },
+        "optional": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "access": {
           "$ref": "#/$defs/AccessTier"
         },
@@ -1921,6 +1953,33 @@
         "file",
         "self"
       ]
+    },
+    "ResolvedSeeder": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "image",
+        "memory",
+        "cpu"
+      ],
+      "additionalProperties": false
     },
     "HardeningClass": {
       "type": "string",
@@ -2445,31 +2504,62 @@
       "additionalProperties": false
     },
     "ResolvedAsset": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mountAt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "from",
+            "mountAt",
+            "content"
+          ],
+          "additionalProperties": false
         },
-        "from": {
-          "type": "string",
-          "minLength": 1
-        },
-        "mountAt": {
-          "type": "string",
-          "minLength": 1
-        },
-        "content": {
-          "type": "string"
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "seedAt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "from",
+            "seedAt",
+            "content"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "name",
-        "from",
-        "mountAt",
-        "content"
-      ],
-      "additionalProperties": false
+      ]
     },
     "ResolvedSidecar": {
       "type": "object",
@@ -2485,6 +2575,21 @@
         "imageVersion": {
           "type": "string",
           "minLength": 1
+        },
+        "command": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "args": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "memory": {
           "type": "string",
@@ -2511,6 +2616,28 @@
             },
             "required": [
               "claim",
+              "mountAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "assets": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mountAt": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "from",
               "mountAt"
             ],
             "additionalProperties": false
@@ -2596,6 +2723,10 @@
         "size": {
           "type": "string",
           "minLength": 1
+        },
+        "medium": {
+          "type": "string",
+          "const": "memory"
         }
       },
       "required": [
