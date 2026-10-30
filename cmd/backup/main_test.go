@@ -171,12 +171,14 @@ func TestWhatIsNotARunIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}{
 		"no method":            {nil, map[string]string{"BACKUP_RETAIN": "1"}},
 		"two methods":          {[]string{"files", "postgres"}, map[string]string{"BACKUP_RETAIN": "1"}},
-		"an unknown method":    {[]string{"mongo"}, map[string]string{"BACKUP_RETAIN": "1"}},
+		"an unknown method":    {[]string{"mysql"}, map[string]string{"BACKUP_RETAIN": "1"}},
 		"no retain":            {[]string{"files"}, nil},
 		"postgres, no peer":    {[]string{"postgres"}, map[string]string{"BACKUP_RETAIN": "1", "PGUSER": "backup", "PGPASSWORD": "secret"}},
 		"postgres, no account": {[]string{"postgres"}, map[string]string{"BACKUP_RETAIN": "1", "BACKUP_HOST": "postgres", "BACKUP_PORT": "5432"}},
 		"rabbitmq, no peer":    {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1", "RABBITMQ_USERNAME": "backup", "RABBITMQ_PASSWORD": "secret"}},
 		"rabbitmq, no account": {[]string{"rabbitmq"}, map[string]string{"BACKUP_RETAIN": "1", "BACKUP_HOST": "rabbitmq", "BACKUP_PORT": "15672"}},
+		"mongo, no peer":       {[]string{"mongo"}, map[string]string{"BACKUP_RETAIN": "1", "MONGO_USERNAME": "backup", "MONGO_PASSWORD": "secret"}},
+		"mongo, no account":    {[]string{"mongo"}, map[string]string{"BACKUP_RETAIN": "1", "BACKUP_HOST": "mongo", "BACKUP_PORT": "27017"}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -261,6 +263,56 @@ func TestRabbitmqReadsTheDefinitions(t *testing.T) {
 	}
 	if body, _ := os.ReadFile(written); string(body) != `{"vhosts":[]}` { //nolint:gosec // G304: the generation this run wrote
 		t.Fatalf("holds %q", body)
+	}
+}
+
+// The stand-in prints its arguments, its environment and the config file it is handed: the
+// password reaches mongodump through that file alone, quoted whatever it holds.
+func TestMongoDumpsThroughMongodumpWithThePasswordInItsConfig(t *testing.T) {
+	at := claim(t)
+	command := filepath.Join(t.TempDir(), "mongodump")
+	script := "#!/bin/sh\necho \"$*\"\nenv | sort\nfor a; do case $a in --config=*) cat \"${a#--config=}\";; esac; done\n"
+	//nolint:gosec // G306: an executable stand-in
+	if err := os.WriteFile(command, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	written, _, err := run(context.Background(), []string{"mongo"}, env(map[string]string{
+		"BACKUP_RETAIN": "3", "BACKUP_HOST": "mongo.data-system.svc.cluster.local", "BACKUP_PORT": "27017",
+		"MONGO_USERNAME": "backup", "MONGO_PASSWORD": `hunter"2\x`, "MONGODUMP": command, "PATH": "/usr/bin:/bin",
+	}), at, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(written, ".archive.gz") || !strings.HasPrefix(filepath.Base(written), "mongo-") {
+		t.Fatalf("wrote %s", written)
+	}
+	dump := gunzipped(t, written)
+	lines := strings.Split(strings.TrimSuffix(dump, "\n"), "\n")
+	want := "--host=mongo.data-system.svc.cluster.local --port=27017 --username=backup --authenticationDatabase=admin --archive --config=/dev/fd/3"
+	if lines[0] != want {
+		t.Fatalf("ran with %q", lines[0])
+	}
+	if last := lines[len(lines)-1]; last != `password: "hunter\"2\\x"` {
+		t.Fatalf("config holds %q", last)
+	}
+	if before := strings.Join(lines[:len(lines)-1], "\n"); strings.Contains(before, "hunter") || strings.Contains(before, "MONGO_") {
+		t.Fatalf("the password reached mongodump other than by its config:\n%s", dump)
+	}
+}
+
+func TestAFailedMongodumpFailsTheRunWithWhatItSaid(t *testing.T) {
+	at := claim(t)
+	command := filepath.Join(t.TempDir(), "mongodump")
+	//nolint:gosec // G306: an executable stand-in
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho 'authentication failed' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run(context.Background(), []string{"mongo"}, env(map[string]string{
+		"BACKUP_RETAIN": "1", "BACKUP_HOST": "mongo", "BACKUP_PORT": "27017",
+		"MONGO_USERNAME": "backup", "MONGO_PASSWORD": "secret", "MONGODUMP": command,
+	}), at, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "authentication failed") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

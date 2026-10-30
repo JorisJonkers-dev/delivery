@@ -1,5 +1,5 @@
 // Command backup is the entrypoint of every backup method image the Platform document's engines
-// name: `backup files`, `backup postgres` or `backup rabbitmq`. Each writes one generation into
+// name: `backup files`, `backup postgres`, `backup rabbitmq` or `backup mongo`. Each writes one generation into
 // the backup claim at /backup and keeps the newest BACKUP_RETAIN of its method. A Rollback's
 // one-shot run, handed BACKUP_ROLLBACK, writes a copy BACKUP_RETAIN never counts, and every run
 // deletes such copies once they are 7 days old.
@@ -10,11 +10,14 @@
 //     pg_dump instead: a Rollback's dump of a Project's own database, with its own credential.
 //   - rabbitmq reads the broker's definitions from the management API at BACKUP_HOST and
 //     BACKUP_PORT, as RABBITMQ_USERNAME with RABBITMQ_PASSWORD.
+//   - mongo runs mongodump against the server at BACKUP_HOST and BACKUP_PORT, as MONGO_USERNAME
+//     with MONGO_PASSWORD, a user of the admin database, into a gzipped archive of every database.
 //
 // The render hands a network method its peer as BACKUP_HOST and BACKUP_PORT, and the keys of the
 // credential it logs in with as variables (deploy-kit spec/v1/14-platform-intent.md#engines): the
-// operator writes PGUSER and PGPASSWORD, or RABBITMQ_USERNAME and RABBITMQ_PASSWORD, at the
-// Process's derived path. A method refuses to run without them rather than guess.
+// operator writes PGUSER and PGPASSWORD, RABBITMQ_USERNAME and RABBITMQ_PASSWORD, or
+// MONGO_USERNAME and MONGO_PASSWORD, at the Process's derived path. A method refuses to run
+// without them rather than guess.
 //
 // Handed BACKUP_OFF_CLUSTER, a scheduled run also copies its generation off the cluster, encrypted
 // to BACKUP_OFF_CLUSTER_RECIPIENT, reads it back, and keeps the newest BACKUP_RETAIN there too
@@ -76,7 +79,7 @@ func start(parent context.Context, logger *slog.Logger, args []string, getenv fu
 
 func run(ctx context.Context, args []string, getenv func(string) string, at paths, now time.Time) (string, []string, error) {
 	if len(args) != 1 {
-		return "", nil, errors.New("usage: backup files|postgres|rabbitmq")
+		return "", nil, errors.New("usage: backup files|postgres|rabbitmq|mongo")
 	}
 	settings, err := backup.ReadSettings(getenv)
 	if err != nil {
@@ -172,9 +175,28 @@ func method(ctx context.Context, name string, getenv func(string) string, at pat
 			return backup.Definitions(ctx, http.DefaultClient, management,
 				getenv("RABBITMQ_USERNAME"), getenv("RABBITMQ_PASSWORD"), w)
 		}, nil
+	case "mongo":
+		return mongo(ctx, getenv)
 	default:
-		return backup.Generation{}, nil, fmt.Errorf("no backup method %q: files, postgres or rabbitmq", name)
+		return backup.Generation{}, nil, fmt.Errorf("no backup method %q: files, postgres, rabbitmq or mongo", name)
 	}
+}
+
+// mongo dumps every database over the wire protocol, as a user of the admin database.
+func mongo(ctx context.Context, getenv func(string) string) (backup.Generation, func(io.Writer) error, error) {
+	if err := require(getenv, "BACKUP_HOST", "BACKUP_PORT", "MONGO_USERNAME", "MONGO_PASSWORD"); err != nil {
+		return backup.Generation{}, nil, err
+	}
+	// Not nil: a nil environment would hand mongodump this process's, the password with it.
+	env := []string{}
+	if value := getenv("PATH"); value != "" {
+		env = append(env, "PATH="+value)
+	}
+	return backup.Generation{Method: "mongo", Extension: ".archive.gz"}, func(w io.Writer) error {
+		return backup.MongoDump(ctx, or(getenv("MONGODUMP"), "mongodump"), env, getenv("MONGO_PASSWORD"), w,
+			"--host="+getenv("BACKUP_HOST"), "--port="+getenv("BACKUP_PORT"),
+			"--username="+getenv("MONGO_USERNAME"), "--authenticationDatabase=admin")
+	}, nil
 }
 
 func require(getenv func(string) string, names ...string) error {

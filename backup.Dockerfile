@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.28
 # The backup method images the Platform document's engines name, one target each: file-backup,
-# postgres-backup and rabbitmq-backup. All three run cmd/backup; only what each needs beside it
-# differs. Cross-compiles on the build platform, as the Dockerfile beside it does.
+# postgres-backup, rabbitmq-backup and mongo-backup. All four run cmd/backup; only what each needs
+# beside it differs. Cross-compiles on the build platform, as the Dockerfile beside it does.
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
@@ -35,3 +35,11 @@ FROM postgres:17-alpine AS postgres-backup
 COPY --from=build /out/app /app
 USER 65532:65532
 ENTRYPOINT ["/app", "postgres"]
+
+# mongodump over the wire protocol: a copy of a running mongod's files is not a consistent backup.
+# Alpine's mongodb-tools is 100.12.0, which dumps MongoDB 8.0; move this with the server.
+FROM alpine:3.22 AS mongo-backup
+RUN apk add --no-cache mongodb-tools
+COPY --from=build /out/app /app
+USER 65532:65532
+ENTRYPOINT ["/app", "mongo"]

@@ -121,7 +121,7 @@ jobs:
           # project's share drops them, since the project file names none; the
           # Platform document's own lock pins them, by pull request in
           # JorisJonkers-dev/estate.
-          for method in file-backup postgres-backup rabbitmq-backup; do
+          for method in file-backup postgres-backup rabbitmq-backup mongo-backup; do
             build "$method" --file backup.Dockerfile --target "$method"
           done
           # Flagger is upstream's image, not built here, but this repository's
