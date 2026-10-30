@@ -12,6 +12,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -270,11 +271,46 @@ func add(archive *tar.Writer, path, content, name string, entry fs.DirEntry) err
 // Dump runs pg_dumpall, or pg_dump with the arguments that name its database, which read libpq's
 // own variables (PGHOST, PGPORT, PGUSER, PGPASSWORD), and writes the output gzipped.
 func Dump(ctx context.Context, command string, env []string, w io.Writer, args ...string) error {
-	compressed := gzip.NewWriter(w)
-	var stderr strings.Builder
 	//nolint:gosec // G204: the command is the method's own pg_dump or pg_dumpall, and args name one database
 	dump := exec.CommandContext(ctx, command, append([]string{"--no-password"}, args...)...)
 	dump.Env = env
+	return compressed(dump, command, w)
+}
+
+// MongoDump writes mongodump's archive of every database on the server args name, gzipped. The
+// password reaches mongodump as its config file, through a pipe, never as an argument any process
+// on the node could read, nor as a file left on the claim.
+func MongoDump(ctx context.Context, command string, env []string, password string, w io.Writer, args ...string) error {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("open the config pipe: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+	// A JSON string is a YAML double-quoted scalar, so any password survives the config file.
+	quoted, err := json.Marshal(password)
+	if err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("quote the password: %w", err)
+	}
+	// Far below a pipe's buffer, so the write never waits for mongodump to read.
+	_, err = fmt.Fprintf(writer, "password: %s\n", quoted)
+	if closed := writer.Close(); err == nil {
+		err = closed
+	}
+	if err != nil {
+		return fmt.Errorf("write the config pipe: %w", err)
+	}
+	//nolint:gosec // G204: the command is the method's own mongodump, and args name its peer and login
+	dump := exec.CommandContext(ctx, command, append(args, "--archive", "--config=/dev/fd/3")...)
+	dump.Env = env
+	dump.ExtraFiles = []*os.File{reader}
+	return compressed(dump, command, w)
+}
+
+// compressed runs dump with its standard output gzipped into w.
+func compressed(dump *exec.Cmd, command string, w io.Writer) error {
+	compressed := gzip.NewWriter(w)
+	var stderr strings.Builder
 	dump.Stdout = compressed
 	dump.Stderr = &stderr
 	if err := dump.Run(); err != nil {
