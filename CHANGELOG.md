@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.16.1...v0.17.0) (2026-10-30)
+
+
+### Features
+
+* **backup:** add a mongo-backup method image that dumps over the wire protocol ([#109](https://github.com/JorisJonkers-dev/delivery/issues/109)) ([73c6ed6](https://github.com/JorisJonkers-dev/delivery/commit/73c6ed659a10840325422b47edf0d11abf5b5cbd))
+
 ## [0.16.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.16.0...v0.16.1) (2026-10-29)
 
 
