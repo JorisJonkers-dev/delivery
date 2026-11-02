@@ -159,6 +159,17 @@
             "pattern": "^sha256:[a-f0-9]{64}$"
           }
         },
+        "released": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          }
+        },
         "sourceSha": {
           "type": "string",
           "pattern": "^[a-f0-9]{40}$"
