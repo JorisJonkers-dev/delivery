@@ -252,6 +252,9 @@ type LockedFragment struct {
 	// Ref corresponds to the JSON schema field "ref".
 	Ref string `json:"ref"`
 
+	// Released corresponds to the JSON schema field "released".
+	Released LockedFragmentReleased `json:"released,omitempty,omitzero"`
+
 	// Repository corresponds to the JSON schema field "repository".
 	Repository string `json:"repository"`
 
@@ -267,6 +270,8 @@ type LockedFragment struct {
 	// Version corresponds to the JSON schema field "version".
 	Version string `json:"version"`
 }
+
+type LockedFragmentReleased map[string]string
 
 type LockedFragmentRevisions map[string]string
 

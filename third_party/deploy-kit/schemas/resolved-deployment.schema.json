@@ -150,10 +150,6 @@
           "type": "string",
           "minLength": 1
         },
-        "departing": {
-          "type": "boolean",
-          "const": true
-        },
         "reconcileUnit": {
           "type": "string",
           "minLength": 1
@@ -181,8 +177,147 @@
         "fluxScrape": {
           "$ref": "#/$defs/ResolvedFluxScrape"
         },
+        "k3sScrape": {
+          "type": "object",
+          "properties": {
+            "identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "interval": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^\\d+(ms|s|m|h)$"
+            },
+            "labels": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "kubelet": {
+              "type": "object",
+              "properties": {
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "port"
+              ],
+              "additionalProperties": false
+            },
+            "apiServer": {
+              "type": "object",
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "service": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "port": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "namespace",
+                "service",
+                "port"
+              ],
+              "additionalProperties": false
+            },
+            "coreDns": {
+              "type": "object",
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              },
+              "required": [
+                "namespace",
+                "port"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "identity",
+            "interval",
+            "timeout"
+          ],
+          "additionalProperties": false
+        },
         "dashboards": {
           "$ref": "#/$defs/ResolvedDashboards"
+        },
+        "grafana": {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "credential": {
+              "type": "object",
+              "properties": {
+                "secret": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "user": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "password": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "secret",
+                "user",
+                "password"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "labels",
+            "url",
+            "credential"
+          ],
+          "additionalProperties": false
         },
         "releaseGate": {
           "$ref": "#/$defs/ReleaseGate"
@@ -373,6 +508,10 @@
         "timeout": {
           "type": "string",
           "pattern": "^\\d+(ms|s|m|h)$"
+        },
+        "honorLabels": {
+          "type": "boolean",
+          "const": true
         },
         "labels": {
           "type": "object",
@@ -1315,9 +1454,79 @@
           "type": "string",
           "minLength": 1
         },
-        "instance": {
-          "type": "string",
-          "minLength": 1
+        "operated": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "Prometheus"
+                },
+                "interval": {
+                  "type": "string",
+                  "pattern": "^\\d+(ms|s|m|h)$"
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^\\d+(ms|s|m|h)$"
+                },
+                "monitors": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "alertmanager": {
+                  "type": "object",
+                  "properties": {
+                    "namespace": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "service": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "port": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "namespace",
+                    "service",
+                    "port"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "kind",
+                "interval",
+                "timeout"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "Alertmanager"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          ]
         },
         "lifecycle": {
           "$ref": "#/$defs/Lifecycle"
@@ -1532,14 +1741,19 @@
             "minLength": 1
           }
         },
+        "selfNames": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "spawns": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/ResolvedSpawn"
           }
-        },
-        "move": {
-          "$ref": "#/$defs/ResolvedMove"
         },
         "ingress": {
           "type": "array",
@@ -2058,7 +2272,8 @@
         "create",
         "update",
         "patch",
-        "delete"
+        "delete",
+        "deletecollection"
       ]
     },
     "ApiScope": {
@@ -3000,208 +3215,6 @@
         "egress"
       ],
       "additionalProperties": false
-    },
-    "ResolvedMove": {
-      "type": "object",
-      "properties": {
-        "triggers": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/MoveTrigger"
-          }
-        },
-        "source": {
-          "type": "object",
-          "properties": {
-            "instance": {
-              "type": "string",
-              "minLength": 1
-            },
-            "version": {
-              "type": "string",
-              "minLength": 1
-            },
-            "namespace": {
-              "type": "string",
-              "minLength": 1
-            },
-            "node": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "instance",
-            "version",
-            "namespace",
-            "node"
-          ],
-          "additionalProperties": false
-        },
-        "target": {
-          "type": "object",
-          "properties": {
-            "instance": {
-              "type": "string",
-              "minLength": 1
-            },
-            "image": {
-              "type": "string",
-              "minLength": 1
-            },
-            "version": {
-              "type": "string",
-              "minLength": 1
-            },
-            "namespace": {
-              "type": "string",
-              "minLength": 1
-            },
-            "nodes": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          },
-          "required": [
-            "image",
-            "version",
-            "namespace",
-            "nodes"
-          ],
-          "additionalProperties": false
-        },
-        "method": {
-          "type": "object",
-          "properties": {
-            "image": {
-              "type": "string",
-              "minLength": 1
-            },
-            "imageVersion": {
-              "type": "string",
-              "minLength": 1
-            },
-            "uid": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "gid": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "port": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            },
-            "credential": {
-              "$ref": "#/$defs/ResolvedGrant"
-            },
-            "egress": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/EgressPeer"
-              }
-            }
-          },
-          "required": [
-            "image",
-            "uid",
-            "gid",
-            "port",
-            "credential",
-            "egress"
-          ],
-          "additionalProperties": false
-        },
-        "identity": {
-          "type": "string",
-          "minLength": 1
-        },
-        "flips": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "reversible": {
-          "type": "boolean"
-        },
-        "bounds": {
-          "type": "object",
-          "properties": {
-            "timeout": {
-              "type": "string",
-              "minLength": 1
-            },
-            "retention": {
-              "type": "string",
-              "minLength": 1
-            },
-            "memory": {
-              "type": "string",
-              "minLength": 1
-            },
-            "cpu": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "timeout",
-            "retention",
-            "memory",
-            "cpu"
-          ],
-          "additionalProperties": false
-        },
-        "server": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/DestinationRange"
-          }
-        },
-        "phase": {
-          "$ref": "#/$defs/MoveStep"
-        }
-      },
-      "required": [
-        "triggers",
-        "source",
-        "target",
-        "identity",
-        "flips",
-        "reversible",
-        "bounds"
-      ],
-      "additionalProperties": false
-    },
-    "MoveTrigger": {
-      "type": "string",
-      "enum": [
-        "version",
-        "namespace",
-        "binding"
-      ]
-    },
-    "MoveStep": {
-      "type": "string",
-      "enum": [
-        "sync",
-        "lag",
-        "fence",
-        "unfence",
-        "reverse",
-        "retire"
-      ]
     },
     "IngressPeer": {
       "anyOf": [

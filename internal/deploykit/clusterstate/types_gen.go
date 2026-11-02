@@ -4,7 +4,6 @@ package clusterstate
 
 import "encoding/json"
 import "fmt"
-import "reflect"
 import "regexp"
 import "time"
 import "unicode/utf8"
@@ -21,9 +20,6 @@ type Snapshot struct {
 
 	// Cluster corresponds to the JSON schema field "cluster".
 	Cluster string `json:"cluster"`
-
-	// Instances corresponds to the JSON schema field "instances".
-	Instances []SnapshotInstancesElem `json:"instances,omitempty,omitzero"`
 
 	// Kind corresponds to the JSON schema field "kind".
 	Kind string `json:"kind"`
@@ -67,171 +63,6 @@ func (j *SnapshotBindingsElem) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
 	}
 	*j = SnapshotBindingsElem(plain)
-	return nil
-}
-
-type SnapshotInstancesElem struct {
-	// Application corresponds to the JSON schema field "application".
-	Application string `json:"application"`
-
-	// FlippedAt corresponds to the JSON schema field "flippedAt".
-	FlippedAt *time.Time `json:"flippedAt,omitempty,omitzero"`
-
-	// Instance corresponds to the JSON schema field "instance".
-	Instance string `json:"instance"`
-
-	// Name corresponds to the JSON schema field "name".
-	Name *string `json:"name,omitempty,omitzero"`
-
-	// Namespace corresponds to the JSON schema field "namespace".
-	Namespace string `json:"namespace"`
-
-	// Node corresponds to the JSON schema field "node".
-	Node string `json:"node"`
-
-	// Phase corresponds to the JSON schema field "phase".
-	Phase *SnapshotInstancesElemPhase `json:"phase,omitempty,omitzero"`
-
-	// Target corresponds to the JSON schema field "target".
-	Target *SnapshotInstancesElemTarget `json:"target,omitempty,omitzero"`
-
-	// Version corresponds to the JSON schema field "version".
-	Version string `json:"version"`
-}
-
-type SnapshotInstancesElemPhase string
-
-const SnapshotInstancesElemPhaseFence SnapshotInstancesElemPhase = "fence"
-const SnapshotInstancesElemPhaseLag SnapshotInstancesElemPhase = "lag"
-const SnapshotInstancesElemPhaseRetire SnapshotInstancesElemPhase = "retire"
-const SnapshotInstancesElemPhaseReverse SnapshotInstancesElemPhase = "reverse"
-const SnapshotInstancesElemPhaseSync SnapshotInstancesElemPhase = "sync"
-const SnapshotInstancesElemPhaseUnfence SnapshotInstancesElemPhase = "unfence"
-
-var enumValues_SnapshotInstancesElemPhase = []interface{}{
-	"sync",
-	"lag",
-	"fence",
-	"unfence",
-	"reverse",
-	"retire",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SnapshotInstancesElemPhase) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_SnapshotInstancesElemPhase {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SnapshotInstancesElemPhase, v)
-	}
-	*j = SnapshotInstancesElemPhase(v)
-	return nil
-}
-
-type SnapshotInstancesElemTarget struct {
-	// Name corresponds to the JSON schema field "name".
-	Name string `json:"name"`
-
-	// Namespace corresponds to the JSON schema field "namespace".
-	Namespace string `json:"namespace"`
-
-	// Node corresponds to the JSON schema field "node".
-	Node *string `json:"node,omitempty,omitzero"`
-
-	// Version corresponds to the JSON schema field "version".
-	Version string `json:"version"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SnapshotInstancesElemTarget) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["name"]; raw != nil && !ok {
-		return fmt.Errorf("field name in SnapshotInstancesElemTarget: required")
-	}
-	if _, ok := raw["namespace"]; raw != nil && !ok {
-		return fmt.Errorf("field namespace in SnapshotInstancesElemTarget: required")
-	}
-	if _, ok := raw["version"]; raw != nil && !ok {
-		return fmt.Errorf("field version in SnapshotInstancesElemTarget: required")
-	}
-	type Plain SnapshotInstancesElemTarget
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.Name)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
-	}
-	if plain.Node != nil && utf8.RuneCountInString(string(*plain.Node)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
-	}
-	if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, string(plain.Version)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "Version", `^\d+\.\d+\.\d+$`)
-	}
-	*j = SnapshotInstancesElemTarget(plain)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SnapshotInstancesElem) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["application"]; raw != nil && !ok {
-		return fmt.Errorf("field application in SnapshotInstancesElem: required")
-	}
-	if _, ok := raw["instance"]; raw != nil && !ok {
-		return fmt.Errorf("field instance in SnapshotInstancesElem: required")
-	}
-	if _, ok := raw["namespace"]; raw != nil && !ok {
-		return fmt.Errorf("field namespace in SnapshotInstancesElem: required")
-	}
-	if _, ok := raw["node"]; raw != nil && !ok {
-		return fmt.Errorf("field node in SnapshotInstancesElem: required")
-	}
-	if _, ok := raw["version"]; raw != nil && !ok {
-		return fmt.Errorf("field version in SnapshotInstancesElem: required")
-	}
-	type Plain SnapshotInstancesElem
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if utf8.RuneCountInString(string(plain.Application)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "application", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Instance)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "instance", 1)
-	}
-	if plain.Name != nil && utf8.RuneCountInString(string(*plain.Name)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "name", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Namespace)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "namespace", 1)
-	}
-	if utf8.RuneCountInString(string(plain.Node)) < 1 {
-		return fmt.Errorf("field %s length: must be >= %d", "node", 1)
-	}
-	if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, string(plain.Version)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "Version", `^\d+\.\d+\.\d+$`)
-	}
-	*j = SnapshotInstancesElem(plain)
 	return nil
 }
 
