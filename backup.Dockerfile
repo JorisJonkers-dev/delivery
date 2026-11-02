@@ -38,7 +38,7 @@ ENTRYPOINT ["/app", "postgres"]
 
 # mongodump over the wire protocol: a copy of a running mongod's files is not a consistent backup.
 # Alpine's mongodb-tools is 100.12.0, which dumps MongoDB 8.0; move this with the server.
-FROM alpine:3.22 AS mongo-backup
+FROM alpine:3.24 AS mongo-backup
 RUN apk add --no-cache mongodb-tools
 COPY --from=build /out/app /app
 USER 65532:65532
