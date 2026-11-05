@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.17.0...v0.17.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **deps:** update minor and patch dependencies to v0.37.2 ([#119](https://github.com/JorisJonkers-dev/delivery/issues/119)) ([8162b70](https://github.com/JorisJonkers-dev/delivery/commit/8162b70d45eb6b69b0febf5fb4315fd3d5979dcd))
+
 ## [0.17.0](https://github.com/JorisJonkers-dev/delivery/compare/v0.16.1...v0.17.0) (2026-10-30)
 
 
