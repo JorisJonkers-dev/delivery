@@ -68,6 +68,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Write packages proxy netrc
+        shell: bash
+        # secrets is not usable in a step if:, so opt-in is checked in bash.
+        env:
+          PACKAGES_PROXY_TOKEN: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$PACKAGES_PROXY_TOKEN" ]; then
+            echo "::warning::PACKAGES_PROXY_TOKEN is not set; packages install without the proxy."
+            exit 0
+          fi
+
+          printf '::add-mask::%s\n' "$PACKAGES_PROXY_TOKEN"
+          umask 077
+          netrc="$RUNNER_TEMP/packages-netrc"
+          {
+            printf 'machine packages.jorisjonkers.dev\n'
+            printf 'login packages\n'
+            printf 'password %s\n' "$PACKAGES_PROXY_TOKEN"
+          } > "$netrc"
+          npmrc="$RUNNER_TEMP/packages-npmrc"
+          {
+            printf 'registry=https://packages.jorisjonkers.dev/npm/\n'
+            printf '//packages.jorisjonkers.dev/npm/:_authToken=%s\n' "$PACKAGES_PROXY_TOKEN"
+            printf '@jorisjonkers-dev:registry=https://npm.pkg.github.com\n'
+          } > "$npmrc"
+          {
+            printf 'PROXY_NETRC=%s\n' "$netrc"
+            printf 'PROXY_NPMRC=%s\n' "$npmrc"
+          } >> "$GITHUB_ENV"
+
       - name: Build and push each command's image, and write the images lock share
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
@@ -75,6 +107,16 @@ jobs:
           FLAGGER: ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b
         run: |
           VERSION="${TAG#v}"
+          proxy_args=()
+          if [ -n "${PROXY_NETRC:-}" ]; then
+            proxy_args=(
+              --secret "id=packages-netrc,src=${PROXY_NETRC}"
+              --secret "id=packages-npmrc,src=${PROXY_NPMRC}"
+              --build-arg GOPROXY=https://packages.jorisjonkers.dev/go
+              --build-arg PIP_INDEX_URL=https://packages.jorisjonkers.dev/pypi/simple/
+              --build-arg UV_DEFAULT_INDEX=https://packages.jorisjonkers.dev/pypi/simple/
+            )
+          fi
           {
             echo "apiVersion: lock.jorisjonkers.dev/v1"
             echo "kind: ImagesLock"
@@ -89,7 +131,7 @@ jobs:
           build() {
             local app="$1" image="ghcr.io/jorisjonkers-dev/delivery/$1" digest user
             shift
-            docker buildx build . "$@" \
+            docker buildx build . "$@" "${proxy_args[@]}" \
               --platform linux/amd64,linux/arm64 \
               --build-arg VERSION="$VERSION" \
               --label org.opencontainers.image.version="$VERSION" \
