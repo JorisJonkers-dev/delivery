@@ -8,6 +8,7 @@ on:
       - synchronize
       - labeled
       - unlabeled
+      - edited
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,7 +20,7 @@ permissions:
 
 jobs:
   repository-hygiene:
-    uses: JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-guard.yml@2814b76fc3f5bd4f02a6e4a0fa789f1307757daa # v0.45.4
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-guard.yml@a68da7988585d307c147a320dbd53f76b19943c4 # v0.46.0
     with:
       package-proxy-guard: enforce
     secrets:
