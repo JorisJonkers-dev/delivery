@@ -205,7 +205,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: JorisJonkers-dev/github-workflows/.github/workflows/publish-fragment.yml@8aaf024208bf4b29acb468aecd3cd7ee130d5ac1 # v0.49.1
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/publish-fragment.yml@48fcba8b143567e12716f4b77b9a3ab211719ffd # v0.50.1
     with:
       project-file: deploy/delivery.project.yml
       version: ${{ needs.release-please.outputs.tag_name }}
