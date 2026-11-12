@@ -43,7 +43,15 @@ ENTRYPOINT ["/app", "postgres"]
 # mongodump over the wire protocol: a copy of a running mongod's files is not a consistent backup.
 # Alpine's mongodb-tools is 100.12.0, which dumps MongoDB 8.0; move this with the server.
 FROM alpine:3.24 AS mongo-backup
-RUN apk add --no-cache mongodb-tools
+# apk installs through the package proxy when the build has its packages-netrc secret (CI); without it, from Alpine's own mirrors.
+RUN --mount=type=secret,id=packages-netrc,target=/root/.netrc,required=false \
+    set -e; \
+    repos=""; \
+    if [ -s /root/.netrc ]; then \
+      v=$(cut -d. -f1,2 /etc/alpine-release); \
+      repos="--repositories-file /dev/null --repository https://packages.jorisjonkers.dev/apk/alpine/v$v/main --repository https://packages.jorisjonkers.dev/apk/alpine/v$v/community"; \
+    fi; \
+    apk add --no-cache $repos mongodb-tools
 COPY --from=build /out/app /app
 USER 65532:65532
 ENTRYPOINT ["/app", "mongo"]
