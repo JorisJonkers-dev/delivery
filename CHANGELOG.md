@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.17.1...v0.17.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/testcontainers/testcontainers-go to v0.45.0 ([#136](https://github.com/JorisJonkers-dev/delivery/issues/136)) ([44a4f93](https://github.com/JorisJonkers-dev/delivery/commit/44a4f931416d5ff6e409d5f229c118f4b7da676e))
+* **hygiene:** never cancel a run of the required hygiene checks ([#134](https://github.com/JorisJonkers-dev/delivery/issues/134)) ([759209e](https://github.com/JorisJonkers-dev/delivery/commit/759209e8b9b49ea5eca1f360659731e518843a86))
+
 ## [0.17.1](https://github.com/JorisJonkers-dev/delivery/compare/v0.17.0...v0.17.1) (2026-11-10)
 
 
