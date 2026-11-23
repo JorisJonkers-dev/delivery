@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 # Cross-compiles on the build platform, so a multi-arch build needs no emulation for the Go stage.
 
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
