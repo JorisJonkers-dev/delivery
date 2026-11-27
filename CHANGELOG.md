@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/JorisJonkers-dev/delivery/compare/v0.17.2...v0.17.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **deps:** update module modernc.org/sqlite to v1.62.0 ([#140](https://github.com/JorisJonkers-dev/delivery/issues/140)) ([50e9a91](https://github.com/JorisJonkers-dev/delivery/commit/50e9a916a18d6a4e021df8bfe113490f4271f883))
+
 ## [0.17.2](https://github.com/JorisJonkers-dev/delivery/compare/v0.17.1...v0.17.2) (2026-11-13)
 
 
